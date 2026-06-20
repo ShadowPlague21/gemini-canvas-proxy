@@ -116,34 +116,27 @@ def openai_to_gemini(body):
         content = msg.get('content', '')
 
         # ── Assistant messages with tool_calls ────────────────────────────
-        # Canvas key rejects functionCall parts in history, so we describe
-        # the tool call as plain text. The model understands this context.
-        #
-        # IMPORTANT: The encoding must NOT look like a template the model can
-        # imitate. Earlier we used "[Calling tool: name(args)]" which the model
-        # copied as text instead of issuing native functionCall parts.
-        # The new encoding uses a past-tense narrative format that the model
-        # interprets as history context, not a pattern to follow.
+        # Send native functionCall parts in history. This is the proper Gemini
+        # format and avoids the text-encoding mimicry problem where the model
+        # copies text tool-call patterns instead of issuing native functionCall.
         if role == 'assistant' and msg.get('tool_calls'):
-            call_descriptions = []
+            parts = []
+            if content:
+                parts.append({"text": content})
             for tc in msg.get('tool_calls', []):
                 func = tc.get('function', {})
                 args_str = func.get('arguments', '{}')
                 try:
                     args_parsed = json.loads(args_str)
-                    args_preview = ', '.join(f'{k}={v!r}' for k, v in list(args_parsed.items())[:3])
                 except Exception:
-                    args_preview = args_str[:100]
-                call_descriptions.append(f"I used the {func.get('name', '')} tool ({args_preview}).")
-            text = (content + "\n" if content else "") + "\n".join(call_descriptions)
-            contents.append({"role": "model", "parts": [{"text": text.strip()}]})
+                    args_parsed = {}
+                parts.append({"functionCall": {"name": func.get('name', ''), "args": args_parsed}})
+            contents.append({"role": "model", "parts": parts})
             continue
 
         # ── Tool results ──────────────────────────────────────────────────
-        # Canvas key rejects the "function" role, so we send tool results
-        # as user messages with a clear prefix. The model handles this fine.
-        #
-        # Use a narrative format consistent with the assistant encoding above.
+        # Send native functionResponse parts. Maps tool_call_id to function name
+        # by scanning prior assistant messages.
         if role == 'tool':
             tool_call_id = msg.get('tool_call_id', '')
             func_name = ""
@@ -153,12 +146,15 @@ def openai_to_gemini(body):
                         if tc.get('id') == tool_call_id:
                             func_name = tc.get('function', {}).get('name', '')
                             break
-            # Truncate very long tool results to avoid context bloat
             result_text = str(content)
             if len(result_text) > 5000:
                 result_text = result_text[:5000] + "\n... (truncated)"
-            result_text = f"Result from {func_name}: {result_text}"
-            contents.append({"role": "user", "parts": [{"text": result_text}]})
+            # Try to parse as JSON for structured response, else use as string
+            try:
+                result_obj = json.loads(result_text)
+            except Exception:
+                result_obj = {"output": result_text}
+            contents.append({"role": "user", "parts": [{"functionResponse": {"name": func_name, "response": result_obj}}]})
             continue
 
         # ── Multimodal content (images, mixed text+image) ────────────────
