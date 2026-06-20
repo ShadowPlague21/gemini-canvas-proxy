@@ -74,7 +74,7 @@ async function handleApiRequest(msg) {
     // Programmatically inject content script (in case it wasn't auto-injected)
     try {
         await chrome.scripting.executeScript({
-            target: { tabId: canvasTabId },
+            target: { tabId: canvasTabId, allFrames: true },
             files: ['content_script.js']
         });
     } catch (e) {

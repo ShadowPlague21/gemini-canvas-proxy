@@ -12,14 +12,10 @@
  *                         ▼
  *                   background.js (service worker)
  *
- * IMPORTANT: Only ONE content script instance runs in the top frame.
- * We track the proxy iframe by listening for its 'ready' message,
- * then only post to THAT specific iframe (not all iframes).
+ * Deduplication is handled on the Canvas proxy page side (by request ID),
+ * NOT here — we post to all iframes because the Canvas iframe is sandboxed
+ * and event.source matching is unreliable across sandbox boundaries.
  */
-
-// ── State ──────────────────────────────────────────────────────────────────
-
-let proxyIframe = null;  // The specific iframe running our proxy page
 
 // ── Listen for messages from the Canvas iframe (via postMessage) ────────────
 
@@ -27,16 +23,8 @@ window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data) return;
 
-    // Canvas proxy page is ready — remember which iframe it is
+    // Canvas proxy page is ready — notify background
     if (data.source === 'gemini-proxy-ready') {
-        // Find the iframe that sent this message
-        const iframes = document.querySelectorAll('iframe');
-        for (const iframe of iframes) {
-            if (iframe.contentWindow === event.source) {
-                proxyIframe = iframe;
-                break;
-            }
-        }
         chrome.runtime.sendMessage({ type: 'page_ready' });
         return;
     }
@@ -67,14 +55,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             headers: message.headers
         };
 
-        // Send ONLY to the identified proxy iframe (not all iframes)
-        if (proxyIframe) {
-            try {
-                proxyIframe.contentWindow.postMessage(payload, '*');
-            } catch (e) {
-                // If the iframe was removed/reloaded, reset
-                proxyIframe = null;
-            }
-        }
+        // Send to ALL iframes — the Canvas preview iframe will pick it up.
+        // We post to all because sandbox cross-origin restrictions make
+        // iframe.contentWindow matching unreliable. Deduplication is handled
+        // on the Canvas proxy page by tracking request IDs.
+        document.querySelectorAll('iframe').forEach(iframe => {
+            try { iframe.contentWindow.postMessage(payload, '*'); } catch (e) {}
+        });
+
+        // Also send to main window (in case proxy code is in top-level page)
+        window.postMessage(payload, '*');
     }
 });

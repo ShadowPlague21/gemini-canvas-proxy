@@ -338,6 +338,27 @@ function App() {
     const [stats, setStats] = useState({ total: 0, success: 0, errors: 0 });
     const logEndRef = useRef(null);
 
+    // ── Request deduplication ──────────────────────────────────────────
+    // The content script posts to ALL iframes + main window for reliability
+    // (sandbox cross-origin makes iframe targeting unreliable). This means
+    // we may receive the same request multiple times. We track seen IDs and
+    // skip duplicates. Entries expire after 30 seconds.
+    var seenRequests = useRef({});
+    var seenCleanupTimer = useRef(null);
+
+    // Clean up seen request IDs every 30 seconds
+    useEffect(function() {
+        seenCleanupTimer.current = setInterval(function() {
+            var now = Date.now();
+            Object.keys(seenRequests.current).forEach(function(key) {
+                if (now - seenRequests.current[key] > 30000) {
+                    delete seenRequests.current[key];
+                }
+            });
+        }, 30000);
+        return function() { clearInterval(seenCleanupTimer.current); };
+    }, []);
+
     const addLog = useCallback((indicator, text, type) => {
         type = type || 'info';
         var time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -367,6 +388,13 @@ function App() {
             if (!data || data.source !== 'gemini-proxy-request') return;
 
             var id = data.id;
+
+            // ── Deduplicate: skip if we've already seen this request ID ──
+            // The content script posts to all iframes + main window, so we
+            // receive the same request multiple times. Only process the first.
+            if (seenRequests.current[id]) return;
+            seenRequests.current[id] = Date.now();
+
             var method = data.method || 'POST';
             var path = data.path;
             var body = data.body;

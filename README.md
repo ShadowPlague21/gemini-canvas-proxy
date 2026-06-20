@@ -101,12 +101,14 @@ The setup script will:
 ### 3. Start the Canvas Proxy
 
 1. Go to [gemini.google.com](https://gemini.google.com)
-2. Tell Gemini: **"Create a web app"**
-3. Switch to the **Code** tab
-4. Select ALL the generated code → **delete it**
-5. Open `canvas-proxy.html` from this project
-6. Copy ALL contents → **paste** into the Canvas code editor
-7. Click **Preview** — you should see the proxy UI with a green **"Proxy Active"** status
+2. Click the **+** icon (left of the prompt bar)
+3. Select **Canvas** from the menu
+4. Type: **Create a web app**
+5. Switch to the **Code** tab (top of the Canvas panel)
+6. Select ALL the generated code → **delete it**
+7. Open `canvas-proxy.html` from this project
+8. Copy ALL contents → **paste** into the Canvas code editor
+9. Click **Preview** — you should see the proxy UI with a green **"Proxy Active"** status
 
 ### 4. Test It
 
@@ -175,9 +177,15 @@ Google rotates the promoted model periodically. If you get a 403, the Canvas key
   }]
 }
 ```
-Both `data:` URIs and `http(s)://` URLs are supported. URL images are fetched server-side by the native host and converted to `inlineData` (since Canvas can't fetch arbitrary URLs).
+**Both `data:` URIs and `http(s)://` URLs are supported.** URL images are fetched server-side by the native host and converted to `inlineData` (since Canvas can't fetch arbitrary URLs).
 
-**⚠️ Size limit:** Chrome native messaging limits host→extension messages to 1MB. Large images (>750KB base64) may be truncated. For best results, resize/compress images before sending.
+**Large payloads (>900KB):** Chrome native messaging limits host→extension messages to 1MB. When a payload exceeds 900KB, the proxy automatically switches to an HTTP fetch workaround:
+1. Native host stores the payload and serves it at an internal endpoint
+2. Sends a small notification via native messaging (`fetch_payload: true`)
+3. Extension service worker `fetch()`es the full payload from localhost (service workers are exempt from Local Network Access restrictions)
+4. Forwards the full payload to Canvas → Gemini API
+
+This means **there is no practical size limit** for requests — text, images, or any combination. Responses use the extension→host direction which has a 64MB limit.
 
 **Output (image generation):** Image models return images as markdown data URLs in the response content:
 ```
