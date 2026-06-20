@@ -157,10 +157,10 @@ Google rotates the promoted model periodically. If you get a 403, the Canvas key
 
 ### Features
 - ✅ **Chat completions** — text generation with system prompts
-- ✅ **Tool/function calling** — model can generate tool calls; results sent back as text (Canvas key rejects native function role)
+- ✅ **Tool/function calling** — native Gemini function calling with `thoughtSignature` support; tool results sent back as native `functionResponse` parts
 - ✅ **Multimodal input** — images via data URIs (`data:image/png;base64,...`) AND HTTP URLs (fetched server-side)
 - ✅ **Image generation** — Nano Banana 2 / Nano Banana output images as markdown data URLs
-- ✅ **Streaming** — faked (single chunk + `[DONE]`)
+- ✅ **Streaming** — faked (single chunk + `[DONE]`), correctly emits `tool_calls` deltas with `finish_reason: "tool_calls"`
 - ✅ **Multi-turn conversations** — full conversation history
 - ✅ **Format translation** — automatic OpenAI ↔ Gemini conversion
 
@@ -196,11 +196,11 @@ This works in **all environments** — no HTTP fetch, no localhost network acces
 
 ### Tool Calling Notes
 
-The Canvas internal key has a limitation: it rejects native `function` and `functionResponse` roles in conversation history (returns 401). The proxy works around this by:
-- Converting assistant tool calls to text: `[Calling tool: get_weather({"city": "Tokyo"})]`
-- Converting tool results to user messages: `[Tool result from get_weather]: {"weather": "22°C"}`
+The proxy uses **native Gemini function calling** for both outgoing tool calls and conversation history:
 
-The model understands these text-encoded tool interactions perfectly. New tool calls (outgoing) use native Gemini function calling — only history is text-encoded.
+- **Outgoing**: Tool definitions are translated from OpenAI format to Gemini `functionDeclarations` with UPPERCASE type values
+- **History**: Assistant tool calls are sent as native `functionCall` parts with a `thoughtSignature` field (required by Gemini 3). Tool results are sent as native `functionResponse` parts with role `"user"`
+- **Schema sanitization**: The proxy automatically strips JSON Schema fields that Gemini rejects (`$schema`, `additionalProperties`, `format`, `nullable`, `title`, `items: true`) — this prevents `MALFORMED_FUNCTION_CALL` errors when using tools from MCP servers or other sources that generate strict JSON Schema
 
 ---
 
@@ -208,37 +208,25 @@ The model understands these text-encoded tool interactions perfectly. New tool c
 
 ### Hermes Agent
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) is an open-source AI agent framework with full tool calling support.
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) is an open-source AI agent framework with full tool calling support. Add the proxy as a custom provider in `~/.hermes/config.yaml`:
 
-```bash
-# Set the provider to use the proxy
-hermes config set model.provider openai
-hermes config set model.base_url http://127.0.0.1:8765/v1
-hermes config set model.api_key not-needed
-hermes config set model.default gemini-3-flash-preview
-
-# Verify it works
-hermes chat -q "Say hello"
-
-# Or interactively
-hermes
-```
-
-Or edit `~/.hermes/config.yaml` directly:
 ```yaml
-model:
-  provider: openai
-  base_url: http://127.0.0.1:8765/v1
-  api_key: not-needed
-  default: gemini-3-flash-preview
+custom_providers:
+  - name: "Local (127.0.0.1:8765)"
+    base_url: http://127.0.0.1:8765/v1
+    model: gemini-3-flash-preview
+    api_mode: chat_completions
 ```
 
-Add the API key to `~/.hermes/.env`:
-```
-OPENAI_API_KEY=not-needed
+Then use it:
+```bash
+# One-off test
+hermes chat -q "Say hello" --provider "Local (127.0.0.1:8765)" --model gemini-3-flash-preview
+
+# Or set as default provider in config.yaml
 ```
 
-**Note:** Hermes's tool calling (terminal, browser, file operations) works through the proxy. Tool calls are generated natively by Gemini, executed by Hermes locally, and results are sent back through the proxy.
+**Note:** Full tool calling (terminal, browser, file operations, MCP tools) works through the proxy. Tool calls are generated natively by Gemini, executed by Hermes locally, and results are sent back through the proxy using native `functionResponse` parts.
 
 ### OpenClaw / Any OpenAI-Compatible Tool
 
@@ -293,8 +281,7 @@ gemini-canvas-proxy/
 │   ├── background.js          # Service worker: native host ↔ content script
 │   └── content_script.js      # PostMessage relay: iframe ↔ extension
 ├── native_host/
-│   ├── gemini_proxy.py        # HTTP server (:8765) + OpenAI↔Gemini translation
-│   └── com.gemini.proxy.json  # Native messaging host manifest template
+│   └── gemini_proxy.py        # HTTP server (:8765) + OpenAI↔Gemini translation
 ├── setup.sh                   # Setup script (Linux / macOS)
 ├── setup.ps1                  # Setup script (Windows PowerShell)
 ├── stop.sh                    # Stop the proxy (Linux / macOS)
@@ -332,9 +319,9 @@ gemini-canvas-proxy/
 - The model name in your request doesn't match what Canvas is promoting
 - Try `gemini-3-flash-preview`, `gemini-2.5-flash-preview-05-20`, or check Google's current Canvas model
 
-### Tool calling returns 401
-- This happens if tool call history contains native `functionCall` parts — the proxy should handle this automatically by converting to text
-- Make sure you're running the latest `gemini_proxy.py`
+### Tool calling returns malformed_function_call
+- Gemini rejects certain JSON Schema fields in tool definitions. The proxy automatically sanitizes schemas, but if you're using a custom tool source that generates unusual schemas, check for unsupported fields (`$schema`, `additionalProperties`, `format`, `nullable`, `title`)
+- Make sure you're running the latest `gemini_proxy.py` — it includes automatic schema sanitization
 
 ---
 
@@ -343,9 +330,9 @@ gemini-canvas-proxy/
 - **Canvas tab must stay open** — closing it kills the proxy
 - **Model-scoped key** — only the currently promoted model works
 - **Large payloads** — payloads >900KB are automatically chunked into 800KB pieces across multiple native messaging messages (bypasses 1MB limit). No size limit in practice.
-- **No real streaming** — responses are buffered then sent as a single SSE chunk
+- **No real streaming** — responses are buffered then sent as a single SSE chunk (but `tool_calls` are correctly emitted in streaming format with proper `finish_reason`)
 - **ToS risk** — using Canvas credentials outside Canvas may violate Google's Terms of Service
-- **Tool calling workaround** — function call history is text-encoded (Canvas key rejects native function role in history)
+- **Tool calling** — uses native Gemini function calling with `thoughtSignature` for history. Tool schemas are automatically sanitized to remove Gemini-incompatible JSON Schema fields
 
 ---
 

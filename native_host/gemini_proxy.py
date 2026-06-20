@@ -273,6 +273,7 @@ def openai_to_gemini(body):
             if tool.get('type') == 'function':
                 func = tool.get('function', {})
                 params = func.get('parameters', {"type": "object", "properties": {}})
+                params = _sanitize_schema_for_gemini(params)
                 params = _uppercase_types(params)
                 func_decls.append({
                     "name": func.get('name', ''),
@@ -295,6 +296,41 @@ def _uppercase_types(obj):
     elif isinstance(obj, list):
         for item in obj:
             _uppercase_types(item)
+    return obj
+
+
+def _sanitize_schema_for_gemini(obj):
+    """Remove JSON Schema fields that Gemini's function calling API rejects.
+
+    Gemini's functionDeclarations use a strict subset of JSON Schema.
+    Unsupported fields cause MALFORMED_FUNCTION_CALL errors.
+    """
+    _FORBIDDEN_KEYS = frozenset({
+        '$schema', '$id', '$ref', '$defs',
+        'additionalProperties', 'unevaluatedProperties',
+        'format', 'nullable',
+        'allOf', 'anyOf', 'oneOf', 'not',
+        'if', 'then', 'else',
+        'const', 'examples',
+        'contentMediaType', 'contentEncoding',
+        'dependentRequired', 'dependentSchemas',
+        'patternProperties',
+        'title',
+    })
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if k in _FORBIDDEN_KEYS:
+                continue
+            # Gemini rejects boolean 'items' — convert to schema or remove
+            if k == 'items' and isinstance(v, bool):
+                if v:
+                    cleaned[k] = {}
+                continue
+            cleaned[k] = _sanitize_schema_for_gemini(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [_sanitize_schema_for_gemini(item) for item in obj]
     return obj
 
 
@@ -526,6 +562,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
         self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
 
