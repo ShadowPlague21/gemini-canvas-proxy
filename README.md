@@ -208,7 +208,24 @@ The proxy uses **native Gemini function calling** for both outgoing tool calls a
 
 ### Hermes Agent
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) is an open-source AI agent framework with full tool calling support. Add the proxy as a custom provider in `~/.hermes/config.yaml`:
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) is an open-source AI agent framework with full tool calling support.
+
+#### Option 1: Interactive Setup (Easiest)
+
+1. Open your terminal and run:
+   ```bash
+   hermes model
+   ```
+2. Use the arrow keys to scroll down and select:
+   - **`Custom (Direct API)`**
+3. When prompted, enter:
+   - **Base URL**: `http://127.0.0.1:8765/v1`
+   - **API Key**: Press **Enter** (not needed)
+4. Select one of the available models (e.g., `gemini-3-flash-preview`).
+
+#### Option 2: Manual Config
+
+Add the proxy as a custom provider in `~/.hermes/config.yaml`:
 
 ```yaml
 custom_providers:
