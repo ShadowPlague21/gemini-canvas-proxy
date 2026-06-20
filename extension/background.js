@@ -111,7 +111,7 @@ function discoverCanvasTab() {
             for (const tab of tabs) {
                 if (!tab.url) continue;
                 const url = tab.url.toLowerCase();
-                // Match various Gemini URLs (canvas.gemini.google.com, gemini.google.com/app, etc.)
+                // Match various Gemini URLs (gemini.google.com/app, etc.)
                 if (url.includes('gemini.google.com') || url.includes('canvas.gemini')) {
                     canvasTabId = tab.id;
                     console.log('[Proxy] Found Gemini tab:', canvasTabId, tab.url.substring(0, 60));

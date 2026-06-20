@@ -216,18 +216,35 @@ def _uppercase_types(obj):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def gemini_to_openai(gemini_response, model):
-    """Convert a Gemini API response to OpenAI chat completion format."""
+    """
+    Convert a Gemini API response to OpenAI chat completion format.
+
+    Handles:
+        - Text parts → message.content
+        - Image parts (inlineData) → message.content as markdown image data URLs
+        - Function calls → tool_calls array
+    """
     candidates = gemini_response.get('candidates', [])
-    text = ""
+    text_parts = []
+    image_parts = []
     finish_reason = "stop"
 
     if candidates:
         candidate = candidates[0]
         parts = candidate.get('content', {}).get('parts', [])
-        text = ''.join(p.get('text', '') for p in parts)
 
-        # Check for function calls in the response
+        # Extract text, images, and function calls from parts
         tool_calls = []
+        for p in parts:
+            if 'text' in p:
+                text_parts.append(p['text'])
+            elif 'inlineData' in p:
+                # Image generation models return images as inlineData
+                img_data = p['inlineData'].get('data', '')
+                mime = p['inlineData'].get('mimeType', 'image/png')
+                image_parts.append(f"![generated_image](data:{mime};base64,{img_data})")
+
+        # Check for function calls
         for p in parts:
             if 'functionCall' in p:
                 fc = p['functionCall']
@@ -244,6 +261,9 @@ def gemini_to_openai(gemini_response, model):
         if finish_reason == 'max_tokens':
             finish_reason = 'length'
 
+        # Combine text and image parts into content
+        content = '\n'.join(text_parts + image_parts) or None
+
         if tool_calls:
             return {
                 "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
@@ -253,7 +273,7 @@ def gemini_to_openai(gemini_response, model):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": text or None,
+                        "content": content,
                         "tool_calls": tool_calls
                     },
                     "finish_reason": "tool_calls"
@@ -261,13 +281,15 @@ def gemini_to_openai(gemini_response, model):
                 "usage": _extract_usage(gemini_response)
             }
 
+    content = '\n'.join(text_parts + image_parts) or ""
+
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
         "object": "chat.completion",
         "model": model,
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant", "content": text},
+            "message": {"role": "assistant", "content": content},
             "finish_reason": finish_reason
         }],
         "usage": _extract_usage(gemini_response)
@@ -300,9 +322,10 @@ class APIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/v1/models':
             models = [
-                {"id": "gemini-3-flash-preview", "object": "model", "owned_by": "google"},
-                {"id": "gemini-2.5-flash-preview-05-20", "object": "model", "owned_by": "google"},
-                {"id": "gemini-2.5-pro-preview-04-09", "object": "model", "owned_by": "google"}
+                {"id": "gemini-3-flash-preview", "object": "model", "owned_by": "google", "description": "Gemini 3 Flash — fast, capable, great for agents"},
+                {"id": "gemini-2.5-flash-preview-05-20", "object": "model", "owned_by": "google", "description": "Gemini 2.5 Flash Preview"},
+                {"id": "gemini-3.1-flash-image-preview", "object": "model", "owned_by": "google", "description": "Nano Banana 2 — image generation"},
+                {"id": "gemini-2.5-flash-image", "object": "model", "owned_by": "google", "description": "Nano Banana — image generation"}
             ]
             self._json_response(200, {"object": "list", "data": models})
         elif self.path == '/health':

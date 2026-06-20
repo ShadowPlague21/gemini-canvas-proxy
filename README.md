@@ -125,16 +125,21 @@ You should get a standard OpenAI-format response. 🎉
 
 ## Available Models
 
-The proxy supports any model Canvas is currently promoting. As of June 2026:
+The Canvas-injected key is model-scoped — it only works with models Canvas is currently promoting. Here are the tested models as of June 2026:
 
-| Model ID | Description |
-|---|---|
-| `gemini-3-flash-preview` | Gemini 3 Flash — fast, capable, great for agents |
-| `gemini-2.5-flash-preview-05-20` | Gemini 2.5 Flash Preview |
-| `gemini-2.5-pro-preview-04-09` | Gemini 2.5 Pro Preview |
-| `gemini-3.1-flash-lite-image-preview` | "Nano Banana 2" — image generation |
+| Model ID | Name | Type | Status |
+|---|---|---|---|
+| `gemini-3-flash-preview` | Gemini 3 Flash | Text + Tools | ✅ Working |
+| `gemini-2.5-flash-preview-05-20` | Gemini 2.5 Flash | Text + Tools | ✅ Working |
+| `gemini-3.1-flash-image-preview` | Nano Banana 2 | Image Generation | ✅ Working |
+| `gemini-2.5-flash-image` | Nano Banana | Image Generation | ✅ Working |
+| `gemini-3.5-flash` | Gemini 3.5 Flash | Text | ❌ 403 (not Canvas-scoped) |
+| `gemini-3.1-flash-lite` | Gemini 3.1 Flash-Lite | Text | ❌ 403 (not Canvas-scoped) |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro | Text | ❌ 403 (not Canvas-scoped) |
+| `gemini-2.5-pro-preview-04-09` | Gemini 2.5 Pro | Text | ❌ 403 (not Canvas-scoped) |
+| `gemini-3-pro-image-preview` | Nano Banana Pro | Image Generation | ❌ 403 (not Canvas-scoped) |
 
-Google rotates the promoted model periodically. The Canvas-injected key only works with the currently active model. If you get a 403, try a different model name.
+Google rotates the promoted model periodically. If you get a 403, the Canvas key isn't scoped for that model — try another from the working list above.
 
 ---
 
@@ -273,7 +278,7 @@ gemini-canvas-proxy/
 ## Troubleshooting
 
 ### "No Canvas tab found"
-- Make sure you're on `gemini.google.com` or `canvas.gemini.google.com` with the proxy HTML in the Preview iframe
+- Make sure you're on `gemini.google.com` with the proxy HTML in the Preview iframe
 - Reload the extension at `chrome://extensions/`
 - Check the extension's service worker console for debug logs
 

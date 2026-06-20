@@ -128,7 +128,7 @@ echo "╚═══════════════════════�
 echo ""
 echo "Next steps:"
 echo ""
-echo "  1. Go to gemini.google.com (or canvas.gemini.google.com)"
+echo "  1. Go to gemini.google.com"
 echo "  2. Tell Gemini: 'Create a web app'"
 echo "  3. Switch to the Code tab"
 echo "  4. Select all generated code → delete it"

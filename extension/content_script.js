@@ -1,7 +1,7 @@
 /**
  * content_script.js — PostMessage Relay
  *
- * This script runs in the TOP-LEVEL Gemini page (canvas.gemini.google.com
+ * This script runs in the TOP-LEVEL Gemini page (gemini.google.com
  * or gemini.google.com/app). It cannot run directly inside the sandboxed
  * Canvas preview iframe, but it CAN communicate with it via postMessage
  * — which works across sandbox boundaries because it's a browser-level
