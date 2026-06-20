@@ -2,7 +2,7 @@
 
 **Free unlimited Gemini API via Canvas + Chrome extension bridge. No WebSocket, no Local Network Access issues — uses `postMessage` which bypasses Chrome 142+ restrictions entirely.**
 
-[![Tested](https://img.shields.io/badge/tests-16%2F16%20pass-brightgreen)](#features) [![Models](https://img.shields.io/badge/models-4%20working-blue)](#available-models)
+[![Models](https://img.shields.io/badge/models-4%20working-blue)](#available-models)
 
 Provides an OpenAI-compatible API endpoint at `localhost:8765` backed by free unlimited Gemini inference from Gemini Canvas. Works with any OpenAI-compatible tool — [Hermes Agent](https://github.com/NousResearch/hermes-agent), OpenClaw, LiteLLM, LangChain, curl, anything.
 
