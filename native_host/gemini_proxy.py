@@ -110,19 +110,26 @@ def openai_to_gemini(body):
     """
     contents = []
     system_instruction = None
+    pending_tool_parts = []  # Buffer for consecutive tool messages (flush as single user msg)
 
     for msg in body.get('messages', []):
         role = msg.get('role', 'user')
         content = msg.get('content', '')
 
+        # Flush pending tool parts before any non-tool message
+        if role != 'tool' and pending_tool_parts:
+            contents.append({"role": "user", "parts": pending_tool_parts})
+            pending_tool_parts = []
+
         # ── Assistant messages with tool_calls ────────────────────────────
-        # Send native functionCall parts in history. This is the proper Gemini
-        # format and avoids the text-encoding mimicry problem where the model
-        # copies text tool-call patterns instead of issuing native functionCall.
+        # Send native functionCall parts in history. Gemini 3 requires a
+        # thoughtSignature on functionCall parts for validation.
+        # CanvasToAPI uses a dummy signature that passes validation.
         if role == 'assistant' and msg.get('tool_calls'):
             parts = []
             if content:
                 parts.append({"text": content})
+            signature_added = False
             for tc in msg.get('tool_calls', []):
                 func = tc.get('function', {})
                 args_str = func.get('arguments', '{}')
@@ -130,22 +137,30 @@ def openai_to_gemini(body):
                     args_parsed = json.loads(args_str)
                 except Exception:
                     args_parsed = {}
-                parts.append({"functionCall": {"name": func.get('name', ''), "args": args_parsed}})
+                fc_part = {"functionCall": {"name": func.get('name', ''), "args": args_parsed}}
+                # Gemini 3 requires thoughtSignature on the first functionCall
+                if not signature_added:
+                    fc_part["thoughtSignature"] = "context_engineering_is_the_way_to_go"
+                    signature_added = True
+                parts.append(fc_part)
             contents.append({"role": "model", "parts": parts})
             continue
 
         # ── Tool results ──────────────────────────────────────────────────
-        # Send native functionResponse parts. Maps tool_call_id to function name
-        # by scanning prior assistant messages.
+        # Send native functionResponse parts with role "user" (per Gemini spec
+        # and confirmed by CanvasToAPI). Consecutive tool messages are buffered
+        # and flushed as a single user message to maintain role alternation.
         if role == 'tool':
             tool_call_id = msg.get('tool_call_id', '')
-            func_name = ""
-            for prev_msg in body.get('messages', []):
-                if prev_msg.get('role') == 'assistant' and prev_msg.get('tool_calls'):
-                    for tc in prev_msg['tool_calls']:
-                        if tc.get('id') == tool_call_id:
-                            func_name = tc.get('function', {}).get('name', '')
-                            break
+            # Try message.name first (OpenAI spec), then scan history
+            func_name = msg.get('name', '')
+            if not func_name:
+                for prev_msg in body.get('messages', []):
+                    if prev_msg.get('role') == 'assistant' and prev_msg.get('tool_calls'):
+                        for tc in prev_msg['tool_calls']:
+                            if tc.get('id') == tool_call_id:
+                                func_name = tc.get('function', {}).get('name', '')
+                                break
             result_text = str(content)
             if len(result_text) > 5000:
                 result_text = result_text[:5000] + "\n... (truncated)"
@@ -154,7 +169,9 @@ def openai_to_gemini(body):
                 result_obj = json.loads(result_text)
             except Exception:
                 result_obj = {"output": result_text}
-            contents.append({"role": "function", "parts": [{"functionResponse": {"name": func_name, "response": result_obj}}]})
+            pending_tool_parts.append({
+                "functionResponse": {"name": func_name, "response": result_obj}
+            })
             continue
 
         # ── Multimodal content (images, mixed text+image) ────────────────
@@ -222,6 +239,10 @@ def openai_to_gemini(body):
             contents.append({"role": "model", "parts": [{"text": content}]})
         else:
             contents.append({"role": "user", "parts": [{"text": content}]})
+
+    # Flush any remaining tool parts after the loop
+    if pending_tool_parts:
+        contents.append({"role": "user", "parts": pending_tool_parts})
 
     result = {
         "contents": contents,
