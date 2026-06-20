@@ -519,16 +519,40 @@ def main():
     port = int(os.environ.get('PROXY_PORT', '8765'))
     HOST_PORT = port
 
-    # Start HTTP server in background thread
+    # --standalone mode: run HTTP server without native messaging
+    # Useful for debugging or when the extension bridge isn't needed.
+    # The extension can still connect if it discovers the port.
+    standalone = '--standalone' in sys.argv
+
+    # Start HTTP server in a proper thread (not daemon — we want clean shutdown)
     server = HTTPServer(('127.0.0.1', port), APIHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    if standalone:
+        sys.stderr.write(f"[Proxy] Standalone mode — HTTP server on http://127.0.0.1:{port}\n")
+        sys.stderr.write(f"[Proxy] No native messaging — use curl or point any tool at the URL above\n")
+        sys.stderr.flush()
+        try:
+            server_thread.join()
+        except KeyboardInterrupt:
+            server.shutdown()
+        return
 
     # Tell the extension we're ready
-    send_message({"type": "host_ready", "port": port})
+    try:
+        send_message({"type": "host_ready", "port": port})
+    except Exception:
+        # stdout pipe broken — extension may have closed
+        sys.stderr.write("[Proxy] Failed to send host_ready, staying alive for HTTP\n")
+        sys.stderr.flush()
 
     # Main loop: read messages from the extension
     while True:
-        msg = read_message()
+        try:
+            msg = read_message()
+        except Exception:
+            break
         if msg is None:
             break
 
@@ -541,6 +565,10 @@ def main():
                     "error": msg.get('error')
                 })
 
+    # stdin closed — extension disconnected, but keep HTTP server alive
+    # for a bit so in-flight requests can complete
+    sys.stderr.write("[Proxy] Extension disconnected, HTTP server shutting down\n")
+    sys.stderr.flush()
     server.shutdown()
 
 
