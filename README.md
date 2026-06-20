@@ -179,13 +179,13 @@ Google rotates the promoted model periodically. If you get a 403, the Canvas key
 ```
 **Both `data:` URIs and `http(s)://` URLs are supported.** URL images are fetched server-side by the native host and converted to `inlineData` (since Canvas can't fetch arbitrary URLs).
 
-**Large payloads (>900KB):** Chrome native messaging limits host→extension messages to 1MB. When a payload exceeds 900KB, the proxy automatically switches to an HTTP fetch workaround:
-1. Native host stores the payload and serves it at an internal endpoint
-2. Sends a small notification via native messaging (`fetch_payload: true`)
-3. Extension service worker `fetch()`es the full payload from localhost (service workers are exempt from Local Network Access restrictions)
-4. Forwards the full payload to Canvas → Gemini API
+**Large payloads (>900KB):** Chrome native messaging limits host→extension messages to 1MB. When a payload exceeds 900KB, the proxy automatically **chunks** it:
+1. Native host splits the serialized JSON into 800KB pieces
+2. Each chunk is sent as a separate native messaging message (`api_request_chunk`)
+3. The extension service worker reassembles the chunks by index
+4. The reassembled JSON is parsed and forwarded to Canvas → Gemini API
 
-This means **there is no practical size limit** for requests — text, images, or any combination. Responses use the extension→host direction which has a 64MB limit.
+This works in **all environments** — no HTTP fetch, no localhost network access, no Local Network Access issues. Pure native messaging.
 
 **Output (image generation):** Image models return images as markdown data URLs in the response content:
 ```

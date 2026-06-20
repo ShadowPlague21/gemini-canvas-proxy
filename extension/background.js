@@ -41,7 +41,7 @@ function connectNative() {
 
     // Messages from the Python HTTP server
     nativePort.onMessage.addListener((msg) => {
-        if (msg.type === 'api_request') {
+        if (msg.type === 'api_request' || msg.type === 'api_request_chunk') {
             handleApiRequest(msg);
         }
     });
@@ -56,7 +56,40 @@ function connectNative() {
 
 // ── API request forwarding ───────────────────────────────────────────────────
 
+// Chunk reassembly buffer: { request_id: { chunks: [], total: N } }
+const chunkBuffer = {};
+
 async function handleApiRequest(msg) {
+    // Handle chunked payloads (>1MB native messaging limit)
+    if (msg.type === 'api_request_chunk') {
+        if (!chunkBuffer[msg.id]) {
+            chunkBuffer[msg.id] = { chunks: [], total: msg.total_chunks };
+        }
+        chunkBuffer[msg.id].chunks[msg.chunk_index] = msg.chunk_data;
+
+        // Check if all chunks received
+        const buf = chunkBuffer[msg.id];
+        const received = buf.chunks.filter(c => c !== undefined).length;
+        console.log(`[Proxy] Chunk ${msg.chunk_index + 1}/${msg.total_chunks} received (${received}/${buf.total})`);
+
+        if (received < buf.total) return; // Wait for more chunks
+
+        // All chunks received — reassemble
+        const fullJson = buf.chunks.join('');
+        delete chunkBuffer[msg.id];
+        console.log('[Proxy] All chunks reassembled, size:', fullJson.length, 'bytes');
+
+        try {
+            msg = JSON.parse(fullJson);
+        } catch (e) {
+            console.error('[Proxy] Failed to parse reassembled payload:', e);
+            if (nativePort) {
+                nativePort.postMessage({ type: 'api_response', id: msg.id, error: 'Chunk reassembly parse failed' });
+            }
+            return;
+        }
+    }
+
     // Discover the Canvas tab if we don't have one
     if (!canvasTabId) {
         await discoverCanvasTab();
@@ -81,42 +114,6 @@ async function handleApiRequest(msg) {
         // Already injected or sandbox restriction — that's OK
     }
 
-    // If the payload was too large for native messaging (>1MB), fetch it via HTTP.
-    // Extension service workers can fetch() from localhost without Local Network
-    // Access restrictions — this bypasses the 1MB native messaging limit entirely.
-    // We try 127.0.0.1 first, then localhost as a fallback (some environments
-    // like Chromium snap may resolve one but not the other).
-    let body = msg.body;
-    if (msg.fetch_payload) {
-        const urls = [msg.payload_url, msg.payload_url_alt].filter(Boolean);
-        let fetched = false;
-        for (const url of urls) {
-            try {
-                console.log('[Proxy] Fetching large payload from', url);
-                const resp = await fetch(url);
-                if (resp.ok) {
-                    body = await resp.json();
-                    console.log('[Proxy] Payload fetched, size:', JSON.stringify(body).length, 'bytes');
-                    fetched = true;
-                    break;
-                }
-            } catch (err) {
-                console.warn('[Proxy] Fetch failed for', url, ':', err.message);
-            }
-        }
-        if (!fetched) {
-            console.error('[Proxy] All payload fetch attempts failed');
-            if (nativePort) {
-                nativePort.postMessage({
-                    type: 'api_response',
-                    id: msg.id,
-                    error: 'Failed to fetch large payload from all URLs'
-                });
-            }
-            return;
-        }
-    }
-
     // Forward the API request to the content script
     try {
         await chrome.tabs.sendMessage(canvasTabId, {
@@ -124,7 +121,7 @@ async function handleApiRequest(msg) {
             id: msg.id,
             method: msg.method,
             path: msg.path,
-            body: body,
+            body: msg.body,
             headers: msg.headers || {}
         });
     } catch (err) {

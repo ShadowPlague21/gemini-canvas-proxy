@@ -41,7 +41,20 @@ import threading
 import uuid
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from queue import Queue, Empty
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THREADED HTTP SERVER
+# ═══════════════════════════════════════════════════════════════════════════
+# CRITICAL: Must be threaded. When a chat request blocks waiting for the
+# extension response (up to 60s), a single-threaded server would block
+# ALL other requests including health checks.
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """HTTPServer that handles each request in its own thread."""
+    daemon_threads = True
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -422,25 +435,26 @@ class APIHandler(BaseHTTPRequestHandler):
         serialized = json.dumps(message_payload, separators=(',', ':')).encode('utf-8')
 
         if len(serialized) > 900_000:
-            # Payload too large for native messaging (1MB limit).
-            # Strategy: Write payload to a temp file and serve via HTTP.
-            # Send both the HTTP URL and file path to the extension.
-            # The service worker tries HTTP fetch first; if that fails
-            # (Chromium snap network isolation), the content script can
-            # read the file via a different mechanism.
-            payload_store[req_id] = gemini_body
-            sys.stderr.write(f"[Proxy] Large payload ({len(serialized)}B), using fetch workaround\n")
+            # Payload too large for native messaging (1MB host→extension limit).
+            # Strategy: Chunk the payload into <900KB pieces, send each as a
+            # separate native messaging message. The extension reassembles them.
+            # This works in ALL environments (no HTTP fetch needed, no localhost
+            # network access required — pure native messaging).
+            chunk_size = 800_000  # 800KB per chunk (safe margin under 1MB)
+            payload_str = serialized.decode('utf-8')
+            total_chunks = (len(payload_str) + chunk_size - 1) // chunk_size
+            sys.stderr.write(f"[Proxy] Large payload ({len(serialized)}B), sending in {total_chunks} chunks\n")
             sys.stderr.flush()
-            send_message({
-                "type": "api_request",
-                "id": req_id,
-                "method": "POST",
-                "path": f"/v1beta/models/{model}:generateContent",
-                "fetch_payload": True,
-                "payload_url": f"http://127.0.0.1:{HOST_PORT}/internal/payload/{req_id}",
-                "payload_url_alt": f"http://localhost:{HOST_PORT}/internal/payload/{req_id}",
-                "headers": {}
-            })
+
+            for i in range(total_chunks):
+                chunk = payload_str[i * chunk_size : (i + 1) * chunk_size]
+                send_message({
+                    "type": "api_request_chunk",
+                    "id": req_id,
+                    "chunk_index": i,
+                    "total_chunks": total_chunks,
+                    "chunk_data": chunk
+                })
         else:
             # Payload fits within native messaging limit — send inline
             send_message(message_payload)
@@ -531,7 +545,7 @@ def main():
     standalone = '--standalone' in sys.argv
 
     # Start HTTP server in a proper thread (not daemon — we want clean shutdown)
-    server = HTTPServer(('127.0.0.1', port), APIHandler)
+    server = ThreadedHTTPServer(('127.0.0.1', port), APIHandler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
