@@ -105,7 +105,7 @@ The setup script will:
 1. Go to [gemini.google.com](https://gemini.google.com)
 2. Click the **+** icon (left of the prompt bar)
 3. Select **Canvas** from the menu
-4. Type: **Create a web app**
+4. Type: **Create an HTML web app**
 5. Switch to the **Code** tab (top of the Canvas panel)
 6. Select ALL the generated code → **delete it**
 7. Open `canvas-proxy.html` from this project
@@ -337,8 +337,8 @@ gemini-canvas-proxy/
 - Try `gemini-3-flash-preview`, `gemini-2.5-flash-preview-05-20`, or check Google's current Canvas model
 
 ### [ERROR] Expected identifier but found "!"
-- **Cause**: You are pasting the `canvas-proxy.html` code into a **JavaScript/React** canvas. Gemini uses `esbuild` to compile these, and it fails when it sees HTML tags like `<!DOCTYPE html>`.
-- **Fix**: Use the **`canvas-proxy.js`** version instead. It is pure JSX and works in the default React canvas. Or, tell Gemini "Create an HTML file" before pasting the `.html` version.
+- **Cause**: You are pasting the `canvas-proxy.html` code into a **JavaScript/React** canvas. Gemini defaults to React for "web apps", and its compiler (`esbuild`) fails when it sees HTML tags like `<!DOCTYPE html>`.
+- **Fix**: When starting the Canvas, explicitly tell Gemini to **"Create an HTML web app"**. This ensures Gemini uses the HTML renderer which correctly parses the proxy code.
 
 ---
 
