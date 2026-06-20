@@ -95,14 +95,24 @@ elif [ "$OS_TYPE" = "Linux" ]; then
 fi
 
 INSTALLED_COUNT=0
+SKIPPED_COUNT=0
 for dir in "${INSTALL_LOCATIONS[@]}"; do
-    # Create directory if it doesn't exist (skip system-wide if no permission)
-    if mkdir -p "$dir" 2>/dev/null; then
-        echo "$GENERATED_MANIFEST" > "$dir/$NATIVE_HOST_NAME.json"
-        INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
-        echo "  ✓ Installed to: $dir"
+    # Only install if the browser's config directory already exists (browser is installed).
+    # We check the parent of NativeMessagingHosts — e.g. ~/.config/google-chrome/
+    PARENT_DIR="$(dirname "$dir")"
+    if [ ! -d "$PARENT_DIR" ]; then
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+        continue
     fi
+    mkdir -p "$dir" 2>/dev/null || continue
+    echo "$GENERATED_MANIFEST" > "$dir/$NATIVE_HOST_NAME.json"
+    INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+    echo "  ✓ Installed to: $dir"
 done
+
+if [ "$SKIPPED_COUNT" -gt 0 ]; then
+    echo "  ⊘ Skipped $SKIPPED_COUNT browser(s) not found on this system"
+fi
 
 echo ""
 echo "✓ Native messaging manifest installed in $INSTALLED_COUNT location(s)"
