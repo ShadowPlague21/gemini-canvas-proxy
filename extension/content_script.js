@@ -1,39 +1,42 @@
 /**
  * content_script.js — PostMessage Relay
  *
- * This script runs in the TOP-LEVEL Gemini page (gemini.google.com
- * or gemini.google.com/app). It cannot run directly inside the sandboxed
- * Canvas preview iframe, but it CAN communicate with it via postMessage
- * — which works across sandbox boundaries because it's a browser-level
- * mechanism, not a network call.
+ * This script runs in the top-level Gemini page (gemini.google.com).
+ * It cannot run inside the sandboxed Canvas iframe, but it CAN
+ * communicate with it via postMessage (browser-level IPC, not blocked).
  *
  * Communication flow:
- *   ┌─────────────────┐     postMessage      ┌──────────────────────┐
- *   │ Canvas iframe   │ ───────────────────→  │ This content script  │
- *   │ (proxy page)    │ ←───────────────────  │ (top-level page)     │
- *   └─────────────────┘                      └──────────┬───────────┘
- *                                                        │ chrome.runtime
- *                                                        │ .sendMessage
- *                                                        ▼
- *                                            ┌──────────────────────┐
- *                                            │ background.js        │
- *                                            │ (service worker)     │
- *                                            └──────────────────────┘
+ *   Canvas iframe ──postMessage──→ This content script
+ *                ←─────────────────
+ *                         │ chrome.runtime.sendMessage
+ *                         ▼
+ *                   background.js (service worker)
  *
- * Three message types flow through here:
- *   1. page_ready        — iframe announces it loaded (page → bg)
- *   2. api_request       — background forwards API call (bg → iframe)
- *   3. api_response      — iframe returns API result (iframe → bg)
+ * IMPORTANT: Only ONE content script instance runs in the top frame.
+ * We track the proxy iframe by listening for its 'ready' message,
+ * then only post to THAT specific iframe (not all iframes).
  */
 
-// ── Listen for messages from the Canvas iframe (via postMessage) ─────────────
+// ── State ──────────────────────────────────────────────────────────────────
+
+let proxyIframe = null;  // The specific iframe running our proxy page
+
+// ── Listen for messages from the Canvas iframe (via postMessage) ────────────
 
 window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data) return;
 
-    // Canvas proxy page is ready — notify background
+    // Canvas proxy page is ready — remember which iframe it is
     if (data.source === 'gemini-proxy-ready') {
+        // Find the iframe that sent this message
+        const iframes = document.querySelectorAll('iframe');
+        for (const iframe of iframes) {
+            if (iframe.contentWindow === event.source) {
+                proxyIframe = iframe;
+                break;
+            }
+        }
         chrome.runtime.sendMessage({ type: 'page_ready' });
         return;
     }
@@ -64,12 +67,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             headers: message.headers
         };
 
-        // Send to ALL iframes — the Canvas preview iframe will pick it up
-        document.querySelectorAll('iframe').forEach(iframe => {
-            try { iframe.contentWindow.postMessage(payload, '*'); } catch (e) {}
-        });
-
-        // Also send to main window (in case proxy code is in top-level page)
-        window.postMessage(payload, '*');
+        // Send ONLY to the identified proxy iframe (not all iframes)
+        if (proxyIframe) {
+            try {
+                proxyIframe.contentWindow.postMessage(payload, '*');
+            } catch (e) {
+                // If the iframe was removed/reloaded, reset
+                proxyIframe = null;
+            }
+        }
     }
 });
