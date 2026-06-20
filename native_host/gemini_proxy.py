@@ -481,29 +481,101 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_response(200, openai_response)
 
     def _send_streaming(self, openai_response, model):
-        """Fake streaming — send as single chunk + [DONE]."""
+        """Fake streaming — send as single chunk + [DONE].
+
+        Handles both text content and tool_calls in streaming format.
+        For tool_calls, we emit each call as a separate delta chunk
+        (matching OpenAI's streaming protocol for tool calls), followed
+        by a final chunk with finish_reason="tool_calls".
+        """
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
         self.send_header('Cache-Control', 'no-cache')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
 
-        content = openai_response["choices"][0]["message"]["content"] or ""
-        chunk = {
-            "id": openai_response["id"],
-            "object": "chat.completion.chunk",
-            "model": model,
-            "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]
-        }
-        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+        choice = openai_response["choices"][0]
+        message = choice["message"]
+        finish_reason = choice.get("finish_reason", "stop")
+        tool_calls = message.get("tool_calls")
 
-        done_chunk = {
-            "id": openai_response["id"],
-            "object": "chat.completion.chunk",
-            "model": model,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-        }
-        self.wfile.write(f"data: {json.dumps(done_chunk)}\n\n".encode())
+        if tool_calls:
+            # ── Stream tool_calls (OpenAI streaming format) ───────────────
+            # Each tool call is sent as a delta with an index. The first
+            # chunk includes the role. Arguments may be split across chunks
+            # in real OpenAI streaming, but we send them all at once since
+            # our proxy fakes streaming (single Gemini response).
+
+            # First chunk: role + first tool call name
+            first_tc = tool_calls[0]
+            delta = {
+                "role": "assistant",
+                "tool_calls": [{
+                    "index": 0,
+                    "id": first_tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": first_tc["function"]["name"],
+                        "arguments": first_tc["function"]["arguments"]
+                    }
+                }]
+            }
+            chunk = {
+                "id": openai_response["id"],
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": None}]
+            }
+            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+
+            # Additional tool calls (if multiple)
+            for i, tc in enumerate(tool_calls[1:], 1):
+                delta = {
+                    "tool_calls": [{
+                        "index": i,
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"]
+                        }
+                    }]
+                }
+                chunk = {
+                    "id": openai_response["id"],
+                    "object": "chat.completion.chunk",
+                    "model": model,
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": None}]
+                }
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+
+            # Final chunk: finish_reason = "tool_calls"
+            done_chunk = {
+                "id": openai_response["id"],
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]
+            }
+            self.wfile.write(f"data: {json.dumps(done_chunk)}\n\n".encode())
+        else:
+            # ── Stream text content ───────────────────────────────────────
+            content = message.get("content") or ""
+            chunk = {
+                "id": openai_response["id"],
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]
+            }
+            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+
+            done_chunk = {
+                "id": openai_response["id"],
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]
+            }
+            self.wfile.write(f"data: {json.dumps(done_chunk)}\n\n".encode())
+
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 
