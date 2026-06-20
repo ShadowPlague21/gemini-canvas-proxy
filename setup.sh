@@ -5,8 +5,8 @@
 # This script:
 #   1. Makes the Python native host executable
 #   2. Asks for the Chrome extension ID (after you load the extension)
-#   3. Installs the native messaging host manifest in ALL possible
-#      browser config directories (Chrome, Chromium, Chromium snap, etc.)
+#   3. Detects which Chromium browsers are actually installed
+#   4. Installs the native messaging host manifest ONLY for installed browsers
 #
 # Works on: Ubuntu, Debian, Fedora, Arch, macOS, and any Linux distro
 # ═══════════════════════════════════════════════════════════════════════════
@@ -61,61 +61,56 @@ GENERATED_MANIFEST=$(cat << EOF
 EOF
 )
 
-# ── Step 4: Install manifest in ALL possible locations ──────────────────────
-# Different browsers/distros look in different directories. We install
-# everywhere to maximize compatibility.
+# ── Step 4: Detect installed browsers and install manifests ──────────────────
+# We check for the browser binary in PATH. If found, install to its config dir.
+# This avoids creating ghost directories for browsers that aren't installed.
 
-# Detect OS
 OS_TYPE="$(uname -s)"
+INSTALLED_COUNT=0
+SKIPPED_BROWSERS=()
 
-INSTALL_LOCATIONS=()
+install_if_browser_exists() {
+    local binary_name="$1"
+    local manifest_dir="$2"
+    local display_name="$3"
+
+    # Check if the binary exists in PATH, OR if the config dir has a Default profile
+    # (some snap/flatpak installs don't put the binary in PATH)
+    if command -v "$binary_name" &>/dev/null || [ -d "$manifest_dir/../Default" ] || [ -f "$manifest_dir/../Local State" ]; then
+        mkdir -p "$manifest_dir" 2>/dev/null || return
+        echo "$GENERATED_MANIFEST" > "$manifest_dir/$NATIVE_HOST_NAME.json"
+        INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+        echo "  ✓ $display_name → $manifest_dir"
+    else
+        SKIPPED_BROWSERS+=("$display_name")
+    fi
+}
 
 if [ "$OS_TYPE" = "Darwin" ]; then
     # macOS
-    INSTALL_LOCATIONS+=("$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts")
-    INSTALL_LOCATIONS+=("$HOME/Library/Application Support/Chromium/NativeMessagingHosts")
-    INSTALL_LOCATIONS+=("$HOME/Library/Application Support/Microsoft Edge/NativeMessagingHosts")
-    INSTALL_LOCATIONS+=("$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts")
+    install_if_browser_exists "google-chrome" "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts" "Google Chrome"
+    install_if_browser_exists "chromium" "$HOME/Library/Application Support/Chromium/NativeMessagingHosts" "Chromium"
+    install_if_browser_exists "microsoft-edge" "$HOME/Library/Application Support/Microsoft Edge/NativeMessagingHosts" "Microsoft Edge"
+    install_if_browser_exists "brave-browser" "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts" "Brave"
 elif [ "$OS_TYPE" = "Linux" ]; then
-    # Linux — Google Chrome
-    INSTALL_LOCATIONS+=("$HOME/.config/google-chrome/NativeMessagingHosts")
-    # Linux — Chromium (non-snap)
-    INSTALL_LOCATIONS+=("$HOME/.config/chromium/NativeMessagingHosts")
-    # Linux — Chromium snap (Ubuntu)
-    INSTALL_LOCATIONS+=("$HOME/snap/chromium/common/chromium/NativeMessagingHosts")
-    # Linux — Brave
-    INSTALL_LOCATIONS+=("$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts")
-    # Linux — Microsoft Edge
-    INSTALL_LOCATIONS+=("$HOME/.config/microsoft-edge/NativeMessagingHosts")
-    # Linux — Vivaldi
-    INSTALL_LOCATIONS+=("$HOME/.config/vivaldi/NativeMessagingHosts")
-    # System-wide (all browsers)
-    INSTALL_LOCATIONS+=("/etc/opt/chrome/native-messaging-hosts")
-    INSTALL_LOCATIONS+=("/etc/chromium/native-messaging-hosts")
-fi
-
-INSTALLED_COUNT=0
-SKIPPED_COUNT=0
-for dir in "${INSTALL_LOCATIONS[@]}"; do
-    # Only install if the browser's config directory already exists (browser is installed).
-    # We check the parent of NativeMessagingHosts — e.g. ~/.config/google-chrome/
-    PARENT_DIR="$(dirname "$dir")"
-    if [ ! -d "$PARENT_DIR" ]; then
-        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
-        continue
-    fi
-    mkdir -p "$dir" 2>/dev/null || continue
-    echo "$GENERATED_MANIFEST" > "$dir/$NATIVE_HOST_NAME.json"
-    INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
-    echo "  ✓ Installed to: $dir"
-done
-
-if [ "$SKIPPED_COUNT" -gt 0 ]; then
-    echo "  ⊘ Skipped $SKIPPED_COUNT browser(s) not found on this system"
+    install_if_browser_exists "google-chrome" "$HOME/.config/google-chrome/NativeMessagingHosts" "Google Chrome"
+    install_if_browser_exists "chromium" "$HOME/.config/chromium/NativeMessagingHosts" "Chromium"
+    install_if_browser_exists "chromium-browser" "$HOME/snap/chromium/common/chromium/NativeMessagingHosts" "Chromium (snap)"
+    install_if_browser_exists "brave-browser" "$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts" "Brave"
+    install_if_browser_exists "microsoft-edge" "$HOME/.config/microsoft-edge/NativeMessagingHosts" "Microsoft Edge"
+    install_if_browser_exists "vivaldi" "$HOME/.config/vivaldi/NativeMessagingHosts" "Vivaldi"
 fi
 
 echo ""
-echo "✓ Native messaging manifest installed in $INSTALLED_COUNT location(s)"
+if [ "$INSTALLED_COUNT" -eq 0 ]; then
+    echo "⚠ No Chromium browsers detected! Install Chrome or Chromium first."
+else
+    echo "✓ Native messaging manifest installed for $INSTALLED_COUNT browser(s)"
+fi
+
+if [ ${#SKIPPED_BROWSERS[@]} -gt 0 ]; then
+    echo "  ⊘ Not installed: ${SKIPPED_BROWSERS[*]}"
+fi
 
 # ── Step 5: Verify Python is available ──────────────────────────────────────
 
@@ -123,7 +118,8 @@ if command -v python3 &>/dev/null; then
     PYTHON_VER=$(python3 --version 2>&1)
     echo "✓ Python found: $PYTHON_VER"
 else
-    echo "⚠ Warning: python3 not found in PATH. The native host requires Python 3.8+."
+    echo ""
+    echo "⚠ python3 not found. The native host requires Python 3.8+."
     echo "  Install with: sudo apt install python3  (Ubuntu/Debian)"
     echo "                sudo dnf install python3   (Fedora)"
     echo "                brew install python         (macOS)"
