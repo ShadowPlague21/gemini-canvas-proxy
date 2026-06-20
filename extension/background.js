@@ -81,6 +81,29 @@ async function handleApiRequest(msg) {
         // Already injected or sandbox restriction — that's OK
     }
 
+    // If the payload was too large for native messaging (>1MB), fetch it via HTTP.
+    // Extension service workers can fetch() from localhost without Local Network
+    // Access restrictions — this bypasses the 1MB native messaging limit entirely.
+    let body = msg.body;
+    if (msg.fetch_payload && msg.payload_url) {
+        try {
+            console.log('[Proxy] Fetching large payload from', msg.payload_url);
+            const resp = await fetch(msg.payload_url);
+            body = await resp.json();
+            console.log('[Proxy] Payload fetched, size:', JSON.stringify(body).length, 'bytes');
+        } catch (err) {
+            console.error('[Proxy] Failed to fetch payload:', err);
+            if (nativePort) {
+                nativePort.postMessage({
+                    type: 'api_response',
+                    id: msg.id,
+                    error: 'Failed to fetch large payload: ' + err.message
+                });
+            }
+            return;
+        }
+    }
+
     // Forward the API request to the content script
     try {
         await chrome.tabs.sendMessage(canvasTabId, {
@@ -88,8 +111,8 @@ async function handleApiRequest(msg) {
             id: msg.id,
             method: msg.method,
             path: msg.path,
-            body: msg.body,
-            headers: msg.headers
+            body: body,
+            headers: msg.headers || {}
         });
     } catch (err) {
         console.warn('[Proxy] Failed to send to tab:', err.message);
@@ -112,7 +135,7 @@ function discoverCanvasTab() {
                 if (!tab.url) continue;
                 const url = tab.url.toLowerCase();
                 // Match various Gemini URLs (gemini.google.com/app, etc.)
-                if (url.includes('gemini.google.com') || url.includes('canvas.gemini')) {
+                if (url.includes('gemini.google.com')) {
                     canvasTabId = tab.id;
                     console.log('[Proxy] Found Gemini tab:', canvasTabId, tab.url.substring(0, 60));
                     resolve(tab.id);
@@ -158,7 +181,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tab.url) {
         const url = tab.url.toLowerCase();
-        if (url.includes('gemini.google.com') || url.includes('canvas.gemini')) {
+        if (url.includes('gemini.google.com')) {
             canvasTabId = tabId;
         } else if (tabId === canvasTabId) {
             canvasTabId = null;

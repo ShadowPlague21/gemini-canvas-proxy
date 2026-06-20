@@ -75,6 +75,8 @@ def send_message(msg):
 # ═══════════════════════════════════════════════════════════════════════════
 
 pending_requests = {}  # request_id → Queue (for matching responses to requests)
+payload_store = {}     # request_id → gemini_body (for large payloads that exceed 1MB native messaging limit)
+HOST_PORT = 8765       # Set in main(), used by request handlers for payload fetch URLs
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -128,7 +130,16 @@ def openai_to_gemini(body):
             contents.append({"role": "user", "parts": [{"text": result_text}]})
             continue
 
-        # ── Multimodal content (images) ───────────────────────────────────
+        # ── Multimodal content (images, mixed text+image) ────────────────
+        # OpenAI sends images as content arrays:
+        #   [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:..."}}]
+        # Gemini expects separate parts:
+        #   [{"text": "..."}, {"inlineData": {"mimeType": "image/png", "data": "base64..."}}]
+        #
+        # Handles both data URIs and HTTP URLs (fetched server-side).
+        # WARNING: Chrome native messaging limits host→extension to 1MB.
+        # Large images (>750KB base64) may cause truncation. We log a warning
+        # but still attempt delivery — Canvas may accept partial data.
         if isinstance(content, list):
             parts = []
             for part in content:
@@ -137,10 +148,38 @@ def openai_to_gemini(body):
                 elif part.get('type') == 'image_url':
                     url = part.get('image_url', {}).get('url', '')
                     if url.startswith('data:'):
+                        # Data URI: extract mime type and base64 data
                         meta, b64 = url.split(',', 1)
                         mime = meta.split(';')[0].split(':')[1] if ':' in meta else 'image/jpeg'
                         parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+                    elif url.startswith('http'):
+                        # HTTP URL: fetch the image server-side, convert to inlineData
+                        # This is necessary because Canvas can't fetch arbitrary URLs,
+                        # and Gemini's fileData requires a separate upload step that
+                        # the Canvas key may not support.
+                        try:
+                            import urllib.request
+                            req = urllib.request.Request(url, headers={'User-Agent': 'GeminiCanvasProxy/1.0'})
+                            with urllib.request.urlopen(req, timeout=15) as resp:
+                                img_data = resp.read()
+                                content_type = resp.headers.get('Content-Type', 'image/jpeg')
+                                # Only process if it's actually an image
+                                if content_type.startswith('image/'):
+                                    import base64
+                                    b64 = base64.b64encode(img_data).decode('utf-8')
+                                    parts.append({"inlineData": {"mimeType": content_type, "data": b64}})
+                        except Exception:
+                            # Silently skip failed fetches — don't break the entire request
+                            pass
             if parts:
+                # Check total payload size for the 1MB native messaging limit
+                try:
+                    payload_size = len(json.dumps(parts).encode('utf-8'))
+                    if payload_size > 900_000:  # 900KB safety margin
+                        sys.stderr.write(f"WARNING: Multimodal payload {payload_size}B exceeds 1MB native messaging limit\n")
+                except Exception:
+                    pass
+
                 if role == 'system':
                     system_instruction = {"parts": parts}
                 elif role == 'assistant':
@@ -330,6 +369,16 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"object": "list", "data": models})
         elif self.path == '/health':
             self._json_response(200, {"status": "ok"})
+        elif self.path.startswith('/internal/payload/'):
+            # Internal endpoint for extension to fetch large payloads that
+            # exceed the 1MB native messaging limit. The extension service
+            # worker can fetch() from localhost without LNA restrictions.
+            req_id = self.path.split('/internal/payload/')[1]
+            body = payload_store.pop(req_id, None)
+            if body is not None:
+                self._json_response(200, body)
+            else:
+                self._json_error(404, "Payload not found or already consumed")
         else:
             self.send_error(404)
 
@@ -358,15 +407,35 @@ class APIHandler(BaseHTTPRequestHandler):
         response_queue = Queue()
         pending_requests[req_id] = response_queue
 
-        # Send to extension via native messaging
-        send_message({
+        # Check if the payload exceeds the 1MB native messaging limit.
+        # Chrome's kMaximumNativeMessageSize = 1024*1024 bytes for host→extension.
+        # If it does, store the payload and tell the extension to fetch it via HTTP
+        # (extension service workers can fetch localhost without LNA restrictions).
+        message_payload = {
             "type": "api_request",
             "id": req_id,
             "method": "POST",
             "path": f"/v1beta/models/{model}:generateContent",
             "body": gemini_body,
             "headers": {}
-        })
+        }
+        serialized = json.dumps(message_payload, separators=(',', ':')).encode('utf-8')
+
+        if len(serialized) > 900_000:
+            # Payload too large for native messaging — use HTTP fetch workaround
+            payload_store[req_id] = gemini_body
+            send_message({
+                "type": "api_request",
+                "id": req_id,
+                "method": "POST",
+                "path": f"/v1beta/models/{model}:generateContent",
+                "fetch_payload": True,
+                "payload_url": f"http://127.0.0.1:{HOST_PORT}/internal/payload/{req_id}",
+                "headers": {}
+            })
+        else:
+            # Payload fits within native messaging limit — send inline
+            send_message(message_payload)
 
         # Wait for the response (up to 60s)
         try:
@@ -444,7 +513,9 @@ class APIHandler(BaseHTTPRequestHandler):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    global HOST_PORT
     port = int(os.environ.get('PROXY_PORT', '8765'))
+    HOST_PORT = port
 
     # Start HTTP server in background thread
     server = HTTPServer(('127.0.0.1', port), APIHandler)

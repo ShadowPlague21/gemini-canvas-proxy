@@ -154,10 +154,35 @@ Google rotates the promoted model periodically. If you get a 403, the Canvas key
 ### Features
 - ✅ **Chat completions** — text generation with system prompts
 - ✅ **Tool/function calling** — model can generate tool calls; results sent back as text (Canvas key rejects native function role)
-- ✅ **Multimodal** — image inputs (data URLs)
+- ✅ **Multimodal input** — images via data URIs (`data:image/png;base64,...`) AND HTTP URLs (fetched server-side)
+- ✅ **Image generation** — Nano Banana 2 / Nano Banana output images as markdown data URLs
 - ✅ **Streaming** — faked (single chunk + `[DONE]`)
 - ✅ **Multi-turn conversations** — full conversation history
 - ✅ **Format translation** — automatic OpenAI ↔ Gemini conversion
+
+### Multimodal Notes
+
+**Input (vision):** Send images as OpenAI-format content arrays:
+```json
+{
+  "model": "gemini-3-flash-preview",
+  "messages": [{
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "What's in this image?"},
+      {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBOR..."}}
+    ]
+  }]
+}
+```
+Both `data:` URIs and `http(s)://` URLs are supported. URL images are fetched server-side by the native host and converted to `inlineData` (since Canvas can't fetch arbitrary URLs).
+
+**⚠️ Size limit:** Chrome native messaging limits host→extension messages to 1MB. Large images (>750KB base64) may be truncated. For best results, resize/compress images before sending.
+
+**Output (image generation):** Image models return images as markdown data URLs in the response content:
+```
+![generated_image](data:image/png;base64,iVBOR...)
+```
 
 ### Tool Calling Notes
 
@@ -262,6 +287,7 @@ gemini-canvas-proxy/
 │   └── com.gemini.proxy.json  # Native messaging host manifest template
 ├── setup.sh                   # Setup script (Linux / macOS)
 ├── setup.ps1                  # Setup script (Windows PowerShell)
+├── stop.sh                    # Stop the proxy (Linux / macOS)
 └── README.md                  # This file
 ```
 
@@ -306,10 +332,29 @@ gemini-canvas-proxy/
 
 - **Canvas tab must stay open** — closing it kills the proxy
 - **Model-scoped key** — only the currently promoted model works
-- **1MB response limit** — Chrome native messaging host→extension max is 1MB
+- **Large request workaround** — payloads >900KB are fetched via HTTP by the extension (bypasses 1MB native messaging limit). Responses have a 64MB limit (extension→host direction).
 - **No real streaming** — responses are buffered then sent as a single SSE chunk
 - **ToS risk** — using Canvas credentials outside Canvas may violate Google's Terms of Service
 - **Tool calling workaround** — function call history is text-encoded (Canvas key rejects native function role in history)
+
+---
+
+## Stopping the Proxy
+
+The native host runs as a subprocess of Chrome — it auto-starts when the extension loads and auto-stops when Chrome closes. To manually stop it:
+
+**Linux / macOS:**
+```bash
+./stop.sh
+```
+
+**Windows:**
+```powershell
+# Find and kill the Python process
+Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*gemini_proxy*' } | Stop-Process -Force
+```
+
+Or simply reload/disable the extension at `chrome://extensions/`.
 
 ---
 
