@@ -2,6 +2,8 @@
 
 **Free unlimited Gemini API via Canvas + Chrome extension bridge. No WebSocket, no Local Network Access issues — uses `postMessage` which bypasses Chrome 142+ restrictions entirely.**
 
+[![Tested](https://img.shields.io/badge/tests-16%2F16%20pass-brightgreen)](#features) [![Models](https://img.shields.io/badge/models-4%20working-blue)](#available-models)
+
 Provides an OpenAI-compatible API endpoint at `localhost:8765` backed by free unlimited Gemini inference from Gemini Canvas. Works with any OpenAI-compatible tool — [Hermes Agent](https://github.com/NousResearch/hermes-agent), OpenClaw, LiteLLM, LangChain, curl, anything.
 
 ---
@@ -88,7 +90,7 @@ chmod +x setup.sh
 The setup script will:
 1. Make the Python host executable
 2. Ask for your Chrome extension ID (after you load the extension)
-3. Install the native messaging host manifest in all browser config directories
+3. Detect which Chromium browsers are installed and install the native messaging host manifest only for those
 
 ### 2. Load the Extension
 
@@ -340,7 +342,7 @@ gemini-canvas-proxy/
 
 - **Canvas tab must stay open** — closing it kills the proxy
 - **Model-scoped key** — only the currently promoted model works
-- **Large request workaround** — payloads >900KB are fetched via HTTP by the extension (bypasses 1MB native messaging limit). Responses have a 64MB limit (extension→host direction).
+- **Large payloads** — payloads >900KB are automatically chunked into 800KB pieces across multiple native messaging messages (bypasses 1MB limit). No size limit in practice.
 - **No real streaming** — responses are buffered then sent as a single SSE chunk
 - **ToS risk** — using Canvas credentials outside Canvas may violate Google's Terms of Service
 - **Tool calling workaround** — function call history is text-encoded (Canvas key rejects native function role in history)
