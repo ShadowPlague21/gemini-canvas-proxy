@@ -66,14 +66,10 @@ Once you have the Extension ID, run the setup script on the VPS:
 ./setup.sh  # Paste the ID when prompted
 ```
 
-## 5. Headless Production Mode
-After you've logged in and loaded the extension, the browser profile is saved. You can now kill the VNC/noVNC processes and run Chromium 24/7 headlessly:
+## 5. Keep it Running
+That's it. You can leave the browser and streaming processes running as is. This allows you to "re-enter" the browser anytime via the noVNC link if you need to refresh the session or fix a Google login prompt.
 
-```bash
-# Start Chromium headlessly (saved in your tmux/screen session)
-xvfb-run --server-args="-screen 0 1280x800x24" \
-  chromium-browser --user-data-dir=$HOME/.config/chromium-vps
-```
+**Tip:** Run all the commands in a `tmux` or `screen` session so they don't die when you close your SSH connection.
 
 ## 6. Access via Tailscale
 The proxy now defaults to binding to `0.0.0.0:8765`, meaning it is reachable from any interface.
