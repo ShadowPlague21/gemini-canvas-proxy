@@ -28,24 +28,35 @@ chmod +x setup.sh
 ./setup.sh  # Follow prompts for Extension ID
 ```
 
-## 3. Interactive Setup (Tailscale + Browser)
-Instead of complex VNC setups, we use Chromium's built-in **Remote Debugging**. This lets you "see" and interact with the VPS browser directly from your local laptop's browser.
+## 3. Interactive Setup (Tailscale + VNC)
+Because Gemini Canvas requires a Google login and manual extension loading, you need a way to interact with the browser once. We use **Xvfb** + **x11vnc** over Tailscale for this.
 
-1. Start Chromium on the VPS with remote debugging enabled:
+1. Install interaction tools on the VPS:
    ```bash
-   xvfb-run --server-args="-screen 0 1280x800x24" \
-     chromium-browser --remote-debugging-port=9222 \
-     --remote-debugging-address=0.0.0.0 \
-     --user-data-dir=$HOME/.config/chromium-vps
+   sudo apt update
+   sudo apt install -y x11vnc xvfb fluxbox
    ```
 
-2. On your **local laptop**, open your browser and navigate to:
-   `http://<vps-tailscale-ip>:9222`
+2. Start the virtual desktop and VNC server:
+   ```bash
+   # Start virtual display
+   Xvfb :99 -screen 0 1280x720x16 &
+   export DISPLAY=:99
+   
+   # Start a tiny window manager
+   fluxbox &
+   
+   # Start VNC server bound to all interfaces (accessible via Tailscale)
+   x11vnc -display :99 -nopw -forever -xkb
+   ```
 
-3. **In your local browser:**
-   - Click the **"Screencast" icon** (top-left, looks like a tiny monitor).
-   - **You can now see and control the VPS browser!**
-   - Navigate to [gemini.google.com](https://gemini.google.com) and log in.
+3. Connect from your local laptop:
+   Open any VNC client (RealVNC, TigerVNC, or macOS Screen Sharing) and connect to:
+   `<vps-tailscale-ip>:5900`
+
+4. **In the VNC Window:**
+   - Open Chromium: `chromium-browser --user-data-dir=$HOME/.config/chromium-vps`
+   - Log in to [gemini.google.com](https://gemini.google.com).
    - Go to `chrome://extensions`, enable **Developer Mode**, and **Load Unpacked** the `extension/` folder.
    - **Copy the Extension ID** and start a Canvas session.
 
@@ -56,7 +67,8 @@ Once you have the Extension ID, run the setup script on the VPS:
 ```
 
 ## 5. Headless Production Mode
-After the initial setup is done, you can stop the previous command and run Chromium without the debugging port for better performance:
+After the initial setup is done, you don't need VNC anymore. You can run Chromium and the proxy in the background:
+
 ```bash
 xvfb-run --server-args="-screen 0 1280x800x24" \
   chromium-browser --user-data-dir=$HOME/.config/chromium-vps
