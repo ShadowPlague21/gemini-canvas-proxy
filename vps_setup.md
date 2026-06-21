@@ -28,15 +28,58 @@ chmod +x setup.sh
 ./setup.sh  # Follow prompts for Extension ID
 ```
 
-## 3. Run Headless
-Since Gemini Canvas needs a real browser tab, use `xvfb-run` to start Chromium in a virtual frame buffer:
+## 3. Interactive Setup (First-Time Login)
+Because Gemini Canvas requires a Google login and manual extension loading, you need a way to interact with the browser once. We use **Xvfb** + **x11vnc** for this.
+
+1. Install interaction tools:
+   ```bash
+   sudo apt update
+   sudo apt install -y x11vnc xvfb fluxbox
+   ```
+
+2. Start the virtual desktop and VNC server:
+   ```bash
+   # Start virtual display
+   Xvfb :99 -screen 0 1280x720x16 &
+   export DISPLAY=:99
+   
+   # Start a tiny window manager so you can move windows
+   fluxbox &
+   
+   # Start VNC (listening only on localhost for security)
+   x11vnc -display :99 -nopw -listen localhost -xkb
+   ```
+
+3. Connect from your local machine:
+   Open a new terminal on your **local laptop** and run:
+   ```bash
+   ssh -L 5900:localhost:5900 user@your-vps-ip
+   ```
+   Now open any VNC client (RealVNC, TigerVNC, or macOS Screen Sharing) and connect to `localhost:5900`.
+
+4. **In the VNC Window:**
+   - Open Chromium: `chromium-browser --user-data-dir=$HOME/.config/chromium-vps`
+   - Log in to [gemini.google.com](https://gemini.google.com).
+   - Go to `chrome://extensions`, enable **Developer Mode**, and **Load Unpacked** the `extension/` folder from the repo.
+   - **Copy the Extension ID.**
+   - Start a Canvas session (e.g., "Create an app") and make sure the "Gemini Canvas Proxy" sidebar appears.
+
+## 4. Final Proxy Setup
+Once you have the Extension ID from the step above, run the setup script on the VPS:
 ```bash
-# Start Chromium with a persistent profile
-xvfb-run --server-args="-screen 0 1280x800x24" \
-  chromium-browser --remote-debugging-port=9222 --user-data-dir=$HOME/.config/chromium-vps
+./setup.sh  # Paste the ID when prompted
 ```
 
-## 4. Access via Tailscale
+## 5. Headless Production Mode
+After the initial setup is done, you don't need VNC anymore. You can run Chromium and the proxy in the background using `screen` or `tmux`:
+
+```bash
+# Start Chromium headlessly
+xvfb-run --server-args="-screen 0 1280x800x24" \
+  chromium-browser --user-data-dir=$HOME/.config/chromium-vps
+```
+
+## 6. Access via Tailscale
 The proxy now defaults to binding to `0.0.0.0:8765`, meaning it is reachable from any interface.
 
 **Private Access (Recommended)**
