@@ -1,0 +1,42 @@
+# Keep the build context small. Everything below is irrelevant to the
+# native host image — only `native_host/` is COPYed into the runtime layer.
+
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Docs / scripts not used by the container at runtime
+README.md
+LICENSE
+setup.sh
+setup.ps1
+stop.sh
+vps_setup.md
+canvas-proxy.html
+
+# Extension lives on the host, not in the container
+extension/
+
+# Anything that could leak a developer's local state
+*.log
+*.pid
+*.sock
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docker artefacts — never copy back into a build of themselves
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# The manifest is host-managed and auto-generated; the container doesn't
+# read or write it.
+native_host/com.gemini.proxy.json
+native_host/__pycache__/

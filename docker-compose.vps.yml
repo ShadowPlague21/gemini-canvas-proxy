@@ -1,0 +1,29 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Gemini Canvas Proxy — VPS / Tailscale override
+# ──────────────────────────────────────────────────────────────────────────────
+# Merges ON TOP OF docker-compose.yml. Re-binds the proxy to 0.0.0.0 inside
+# the container AND exposes it on the host's 0.0.0.0 so a Tailscale IP
+# (e.g. 100.x.y.z) can reach it. vps_setup.md recommends exactly this.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#
+# Security: there is NO authentication on the proxy. Exposing 8765 on
+# 0.0.0.0 means anyone who can route to your VPS gets free unlimited Gemini
+# via your Canvas session. Only do this behind Tailscale (or another private
+# mesh / firewall that restricts 8765 to known peers).
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  proxy:
+    ports:
+      # 0.0.0.0:8765:8765 — reachable from every interface including the
+      # tailnet IP. Compose merges port lists by REPLACING the base file's
+      # entry, so the loopback-only binding from docker-compose.yml is gone.
+      - "8765:8765"
+
+    environment:
+      # Bind on all interfaces INSIDE the container too, so the port-forward
+      # above actually has something to forward to.
+      PROXY_BIND: 0.0.0.0
+      PROXY_PORT: "8765"

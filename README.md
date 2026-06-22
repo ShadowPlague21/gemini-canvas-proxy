@@ -115,6 +115,43 @@ You should get a standard OpenAI-format response. 🎉
 
 ---
 
+## Docker (Optional)
+
+For users who want the proxy isolated from their system Python, or running 24/7 on a server, a single-service `docker compose` setup is included.
+
+**What runs in the container:** the Python native host (`gemini_proxy.py`) and its OpenAI-compatible HTTP API on `:8765`.
+
+**What still has to live on the host:** Chrome (or any Chromium browser), the unpacked extension, and the `gemini.google.com` Canvas tab. Chrome's native messaging protocol launches `gemini_proxy.py` via stdio using the absolute path baked into `native_host/com.gemini.proxy.json` — that path is on the host filesystem, not in the container. Bind-mounting the repo (read-only) keeps the manifest's `path` field pointing at real source in both places.
+
+### Local loopback (default)
+
+```bash
+docker compose up -d --build
+curl http://127.0.0.1:8765/v1/models
+```
+
+The service binds `127.0.0.1:8765` only — nothing on your LAN can reach it.
+
+### VPS / Tailscale (override)
+
+The `docker-compose.vps.yml` override flips the bind to `0.0.0.0` so the proxy is reachable via the VPS's Tailscale IP. Combine files with `-f`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+# Now reachable from any tailnet device:
+curl http://<vps-tailscale-ip>:8765/v1/models
+```
+
+**Security:** the proxy has no authentication. Only expose `0.0.0.0:8765` behind a private mesh (Tailscale, WireGuard, firewall) that restricts the port to known peers.
+
+### Image notes
+
+- Base: `python:3.12-slim` — the host is stdlib-only, no `pip install` step.
+- Runs as UID/GID `1000` by default — override `user:` in `docker-compose.yml` if your host UID differs (e.g. `user: "1001:1001"`).
+- Stop with `docker compose down`. Logs: `docker compose logs -f`.
+
+---
+
 ## Available Models
 
 The Canvas-injected key is model-scoped — it only works with models Canvas is currently promoting. Here are the tested models as of June 2026:
@@ -290,6 +327,9 @@ gemini-canvas-proxy/
 ├── setup.sh                   # Setup script (Linux / macOS)
 ├── setup.ps1                  # Setup script (Windows PowerShell)
 ├── stop.sh                    # Stop the proxy (Linux / macOS)
+├── Dockerfile                 # Container image for the native host
+├── docker-compose.yml         # Run the proxy in a container (loopback only)
+├── docker-compose.vps.yml     # Override: bind 0.0.0.0 for Tailscale/VPS
 └── README.md                  # This file
 ```
 

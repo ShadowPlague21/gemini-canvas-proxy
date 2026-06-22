@@ -1,0 +1,90 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Gemini Canvas Proxy — local development / single-host deployment
+# ──────────────────────────────────────────────────────────────────────────────
+# Run the Python native host in a container so the HTTP API surface
+# (127.0.0.1:8765) survives reboots, system Python upgrades, and stays
+# isolated from the rest of your machine.
+#
+# The browser + extension + Canvas tab MUST still live on the host — Chrome's
+# native messaging protocol spawns `gemini_proxy.py` via stdio with the host
+# filesystem path baked into `com.gemini.proxy.json`. Bind-mounting the repo
+# (read-only) keeps that path consistent between container and host, so the
+# manifest you generated with `./setup.sh` keeps working without changes.
+#
+# Usage:
+#   docker compose up -d
+#   curl http://127.0.0.1:8765/v1/models
+#
+# Override files:
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#     ↳ binds 0.0.0.0 for Tailscale / VPS access
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: gemini-canvas-proxy
+
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gemini-canvas-proxy:local
+    container_name: gemini-canvas-proxy
+
+    # Default to loopback-only. The Docker daemon proxies 127.0.0.1:8765 on
+    # the host into the container — nothing on your LAN can reach it.
+    # Flip to 0.0.0.0 via docker-compose.vps.yml if you need tailnet access.
+    ports:
+      - "127.0.0.1:8765:8765"
+
+    # Read-only bind of the repo so `com.gemini.proxy.json` (with its absolute
+    # `path` field pointing at `native_host/gemini_proxy.py`) keeps pointing
+    # at real source — useful for dev iteration. Drop `:ro` if you also want
+    # the container to regenerate the native messaging manifest (not needed
+    # in the normal flow: ./setup.sh runs on the host).
+    volumes:
+      - .:/app:ro
+
+    environment:
+      # Bind inside the container. Port mapping above handles the host side.
+      PROXY_BIND: 0.0.0.0
+      PROXY_PORT: "8765"
+      # Tells the host how to fetch payload URLs in multimodal requests.
+      # When bound to loopback only, requests stay on the host network.
+      PYTHONUNBUFFERED: "1"
+
+    restart: unless-stopped
+
+    # Reasonable hard limits. The host is stdlib HTTP — modest footprint.
+    # Bump if you hit issues; the proxy itself is single-threaded HTTP with
+    # a thread pool, no heavy state.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 32M
+
+    # No TTY, no stdin — Chrome drives stdio when invoked via native messaging,
+    # and docker doesn't talk to stdin here either way.
+    stdin_open: false
+    tty: false
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    # Run as the same UID/GID as the host user that owns the repo so the
+    # read-only bind mount is readable. Override if your host UID differs.
+    user: "1000:1000"
+
+    # Quiet by default; flip to "always" if you're debugging the container.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
