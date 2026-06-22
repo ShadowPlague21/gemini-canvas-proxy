@@ -144,6 +144,33 @@ curl http://<vps-tailscale-ip>:8765/v1/models
 
 **Security:** the proxy has no authentication. Only expose `0.0.0.0:8765` behind a private mesh (Tailscale, WireGuard, firewall) that restricts the port to known peers.
 
+### Shared folder with the host (override)
+
+By default the container gets a Docker-managed named volume (`browser-data`) mounted at `/browser-data` for any state it accumulates. To share that directory with the host — so the same folder backs your host's Chrome profile, the auto-generated native messaging manifest, and the Canvas session cookies — use the `docker-compose.shared.yml` override:
+
+```bash
+# Default: shares ./browser-data (created next to docker-compose.yml on first run)
+docker compose -f docker-compose.yml -f docker-compose.shared.yml up -d --build
+
+# Custom host path
+BROWSER_DATA_HOST=~/.gemini-canvas-proxy/browser-data \
+  docker compose -f docker-compose.yml -f docker-compose.shared.yml up -d --build
+```
+
+Point host-Chrome/Chromium at the same path so the host browser and any future in-container browser see the same cookies:
+
+```bash
+google-chrome --user-data-dir="$PWD/browser-data" chrome://extensions
+```
+
+Combine all three overrides when you want a VPS that's reachable via Tailscale AND has its browser cache on a host path you control:
+
+```bash
+docker compose -f docker-compose.yml \
+               -f docker-compose.shared.yml \
+               -f docker-compose.vps.yml up -d --build
+```
+
 ### Image notes
 
 - Base: `python:3.12-slim` — the host is stdlib-only, no `pip install` step.

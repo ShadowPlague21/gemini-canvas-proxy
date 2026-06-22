@@ -11,13 +11,25 @@
 # (read-only) keeps that path consistent between container and host, so the
 # manifest you generated with `./setup.sh` keeps working without changes.
 #
+# A named `browser-data` volume is mounted at `/browser-data` so the container
+# has a stable, writable home for any state it accumulates (logs, the auto-
+# generated `com.gemini.proxy.json` if you let the container regenerate it,
+# payload caches, etc). By default this volume is purely container-local — use
+# `docker-compose.shared.yml` to bind it to a real host directory so the host's
+# Chrome/Chromium and the container share the same files (extension manifest,
+# browser profile, Canvas session cookies).
+#
 # Usage:
 #   docker compose up -d
 #   curl http://127.0.0.1:8765/v1/models
 #
 # Override files:
+#   docker compose -f docker-compose.yml -f docker-compose.shared.yml up -d
+#     ↳ binds /browser-data to a host path (default: ./.browser-data)
 #   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
 #     ↳ binds 0.0.0.0 for Tailscale / VPS access
+#   docker compose -f docker-compose.yml -f docker-compose.shared.yml -f docker-compose.vps.yml up -d
+#     ↳ both: 0.0.0.0 bind + shared folder with the host
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: gemini-canvas-proxy
@@ -43,6 +55,10 @@ services:
     # in the normal flow: ./setup.sh runs on the host).
     volumes:
       - .:/app:ro
+      # Named volume for browser-side state. Purely container-local by
+      # default; the .shared override swaps it for a host bind so host
+      # Chrome and the container see the same files.
+      - browser-data:/browser-data
 
     environment:
       # Bind inside the container. Port mapping above handles the host side.
@@ -51,6 +67,11 @@ services:
       # Tells the host how to fetch payload URLs in multimodal requests.
       # When bound to loopback only, requests stay on the host network.
       PYTHONUNBUFFERED: "1"
+      # Where the container looks for / writes its browser-side state.
+      # Today the native host writes nothing here, but the path is the
+      # canonical landing spot for the auto-generated native messaging
+      # manifest, payload caches, and any future browser-side files.
+      BROWSER_DATA_DIR: /browser-data
 
     restart: unless-stopped
 
@@ -88,3 +109,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  # Purely container-local browser cache / state. Lives in Docker's volume
+  # store until you swap it for a host bind via docker-compose.shared.yml.
+  # Survives `docker compose down` and `docker compose up` — only `docker
+  # compose down -v` (or `docker volume rm gemini-canvas-proxy_browser-data`)
+  # will wipe it.
+  browser-data:

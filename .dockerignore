@@ -40,3 +40,8 @@ docker-compose.*.yml
 # read or write it.
 native_host/com.gemini.proxy.json
 native_host/__pycache__/
+
+# Local shared-folder mount target — must never be COPYed into an image
+# build, otherwise the developer's browser cache would end up baked in.
+browser-data/
+.browser-data/
