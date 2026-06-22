@@ -115,38 +115,48 @@ You should get a standard OpenAI-format response. 🎉
 
 ---
 
-## Docker (Optional)
+## Docker (Self-Contained)
 
-For users who want the proxy isolated from their system Python, or running 24/7 on a server, a single-service `docker compose` setup is included.
+For users who want the proxy isolated from their system Python, or running 24/7 on a server, a single-service `docker compose` setup is included that runs the **entire stack in one container**: Xvfb + Openbox + Chromium + x11vnc + noVNC + the Python proxy. You log into Gemini through the noVNC web UI in your own laptop browser — no Chrome install, no `tmux` soup, no Tailscale gymnastics required for local use.
 
-**What runs in the container:** the Python native host (`gemini_proxy.py`) and its OpenAI-compatible HTTP API on `:8765`.
+**What's in the container:** virtual display, lightweight window manager, Chromium (persistent profile), VNC server, noVNC web UI on `:6080`, and the OpenAI-compatible HTTP API on `:8765`. Login cookies and the auto-generated native messaging manifest survive container restarts via a named volume (`browser-data`).
 
-**What still has to live on the host:** Chrome (or any Chromium browser), the unpacked extension, and the `gemini.google.com` Canvas tab. Chrome's native messaging protocol launches `gemini_proxy.py` via stdio using the absolute path baked into `native_host/com.gemini.proxy.json` — that path is on the host filesystem, not in the container. Bind-mounting the repo (read-only) keeps the manifest's `path` field pointing at real source in both places.
+**What you do, end-to-end:**
+
+1. `docker compose up -d --build`
+2. Open `http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale` in your **laptop's browser** (not the in-container Chromium).
+3. In the noVNC window: log in to `gemini.google.com`, navigate to `chrome://extensions`, enable Developer mode, **Load unpacked → `/app/extension`** (the extension folder is bind-mounted read-only from the repo).
+4. Copy the Extension ID (32 lowercase characters).
+5. From your laptop: `docker compose exec proxy /app/setup-extension.sh <extension-id>` — this writes the native messaging manifest into the persistent volume so Chromium can find the host on next launch.
+6. `docker compose restart proxy` (so Chromium re-reads the manifest), then `curl http://127.0.0.1:8765/v1/models` to confirm.
+
+After step 6 the setup is durable: restarts of the container, host reboots, and `docker compose down / up` cycles all preserve your login session and the manifest.
 
 ### Local loopback (default)
 
 ```bash
 docker compose up -d --build
-curl http://127.0.0.1:8765/v1/models
+open http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale
 ```
 
-The service binds `127.0.0.1:8765` only — nothing on your LAN can reach it.
+Both ports bind `127.0.0.1` only — nothing on your LAN can reach them.
 
 ### VPS / Tailscale (override)
 
-The `docker-compose.vps.yml` override flips the bind to `0.0.0.0` so the proxy is reachable via the VPS's Tailscale IP. Combine files with `-f`:
+The `docker-compose.vps.yml` override flips both the noVNC web UI (`6080`) and the proxy HTTP API (`8765`) to `0.0.0.0` so they're reachable via the VPS's Tailscale IP. Combine files with `-f`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
-# Now reachable from any tailnet device:
+# From any tailnet device:
+open http://<vps-tailscale-ip>:6080/vnc.html?autoconnect=true&resize=scale
 curl http://<vps-tailscale-ip>:8765/v1/models
 ```
 
-**Security:** the proxy has no authentication. Only expose `0.0.0.0:8765` behind a private mesh (Tailscale, WireGuard, firewall) that restricts the port to known peers.
+**Security:** the proxy has no authentication, and noVNC has no VNC password by default. Only expose `0.0.0.0:6080` and `0.0.0.0:8765` behind a private mesh (Tailscale, WireGuard, firewall) that restricts both ports to known peers. If you need a VNC password, set `VNC_PASSWORD` and pass `-rfbauth` to x11vnc in `entrypoint.sh`.
 
 ### Shared folder with the host (override)
 
-By default the container gets a Docker-managed named volume (`browser-data`) mounted at `/browser-data` for any state it accumulates. To share that directory with the host — so the same folder backs your host's Chrome profile, the auto-generated native messaging manifest, and the Canvas session cookies — use the `docker-compose.shared.yml` override:
+By default the container gets a Docker-managed named volume (`browser-data`) mounted at `/browser-data` for Chromium's profile, the native messaging manifest, and any other browser-side state. To share that directory with the host — so the same folder backs both the in-container Chromium and a host-Chrome you launch separately — use the `docker-compose.shared.yml` override:
 
 ```bash
 # Default: shares ./browser-data (created next to docker-compose.yml on first run)
@@ -157,7 +167,7 @@ BROWSER_DATA_HOST=~/.gemini-canvas-proxy/browser-data \
   docker compose -f docker-compose.yml -f docker-compose.shared.yml up -d --build
 ```
 
-Point host-Chrome/Chromium at the same path so the host browser and any future in-container browser see the same cookies:
+Point host-Chrome/Chromium at the same path so it sees the same cookies:
 
 ```bash
 google-chrome --user-data-dir="$PWD/browser-data" chrome://extensions
@@ -173,9 +183,11 @@ docker compose -f docker-compose.yml \
 
 ### Image notes
 
-- Base: `python:3.12-slim` — the host is stdlib-only, no `pip install` step.
-- Runs as UID/GID `1000` by default — override `user:` in `docker-compose.yml` if your host UID differs (e.g. `user: "1001:1001"`).
-- Stop with `docker compose down`. Logs: `docker compose logs -f`.
+- Base: `python:3.12-slim` + Debian's `chromium`, `xvfb`, `x11vnc`, `novnc`, `websockify`, `openbox` packages. ~600 MB on disk after `apt install`.
+- Runs as non-root user `proxy` (UID/GID `1000`) inside the container, via `tini` as PID 1 for clean signal propagation.
+- Chromium uses `--user-data-dir=/browser-data/chromium-profile` so login cookies + extensions persist across restarts.
+- `/dev/shm` is bumped to 1 GB (`shm_size: 1g`) — Chromium without this hits OOM on every page load.
+- Stop with `docker compose down`. Wipe everything (cookies, manifest, profile) with `docker compose down -v`. Logs: `docker compose logs -f`.
 
 ---
 

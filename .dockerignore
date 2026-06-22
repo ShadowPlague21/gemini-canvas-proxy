@@ -18,6 +18,12 @@ canvas-proxy.html
 # Extension lives on the host, not in the container
 extension/
 
+# Entrypoint scripts are COPYed explicitly — keep them out of the
+# catch-all "everything not native_host/" exclusions.
+# (Listed here for documentation; the Dockerfile COPY lines are exact.)
+# entrypoint.sh
+# setup-extension.sh
+
 # Anything that could leak a developer's local state
 *.log
 *.pid
