@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Merges ON TOP OF docker-compose.yml. Re-binds both the proxy HTTP API
 # (8765) and the noVNC web UI (6080) to 0.0.0.0 so a Tailscale IP
-# (e.g. 100.x.y.z) can reach them. vps_setup.md recommends the same idea.
+# (e.g. 100.x.y.z) can reach them.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
