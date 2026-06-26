@@ -71,10 +71,18 @@ The OpenAI ↔ Gemini format translation was informed by [CanvasToAPI](https://g
 
 ### 1. Installation
 
+**Linux / macOS:**
 ```bash
-git clone https://github.com/pranrichh/gemini-canvas-proxy.git
+git clone https://github.com/ShadowPlague21/gemini-canvas-proxy.git
 cd gemini-canvas-proxy
 ./setup.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/ShadowPlague21/gemini-canvas-proxy.git
+cd gemini-canvas-proxy
+.\setup.ps1
 ```
 
 **☁️ Running on a VPS or want Docker?**
@@ -102,6 +110,7 @@ Use the self-contained Docker Compose stack — see [Docker (Self-Contained)](#d
 
 ### 4. Test It
 
+**Linux / macOS / Git Bash:**
 ```bash
 curl http://127.0.0.1:8765/v1/chat/completions \
   -H 'Content-Type: application/json' \
@@ -109,6 +118,11 @@ curl http://127.0.0.1:8765/v1/chat/completions \
     "model": "gemini-3-flash-preview",
     "messages": [{"role": "user", "content": "Say hello in 5 words"}]
   }'
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/chat/completions" -Method Post -Headers @{"Content-Type"="application/json"} -Body '{"model":"gemini-3-flash-preview","messages":[{"role":"user","content":"Say hello in 5 words"}]}'
 ```
 
 You should get a standard OpenAI-format response. 🎉
@@ -289,7 +303,9 @@ The proxy uses **native Gemini function calling** for both outgoing tool calls a
 
 #### Option 2: Manual Config
 
-Add the proxy as a custom provider in `~/.hermes/config.yaml`:
+Add the proxy as a custom provider in your Hermes config file:
+* **Linux / macOS**: `~/.hermes/config.yaml`
+* **Windows**: `C:\Users\<YourUsername>\.hermes\config.yaml` (or `$env:USERPROFILE\.hermes\config.yaml`)
 
 ```yaml
 custom_providers:
