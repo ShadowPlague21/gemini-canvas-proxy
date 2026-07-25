@@ -1,0 +1,25 @@
+# Auto-generated / runtime
+native_host/com.gemini.proxy.json
+native_host/__pycache__/
+**/*.pyc
+**/__pycache__/
+.venv/
+.env
+
+# Local override / runtime data — never publish
+docker-compose.override.yml
+.gemini-canvas-proxy/
+browser-data/
+machine-id
+*.bak
+*.bak.*
+
+# Local OS / debug scratch
+native_host/*.bat
+debug_output.txt
+commands.txt
+
+# Forensics / antigravity / probe scripts
+_*
+_*/
+_agy_extract/
