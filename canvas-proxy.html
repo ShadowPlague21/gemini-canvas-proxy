@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>⚡ Gemini Canvas Proxy</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
-
+        /* System font stack only — no Google Fonts (saves network + memory) */
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -32,7 +31,7 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
@@ -139,7 +138,7 @@
             padding: 3px 8px;
             border-radius: 6px;
             letter-spacing: 0.02em;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
         }
 
         .status-badge.active {
@@ -172,7 +171,7 @@
         .stat-value {
             font-size: 1.6rem;
             font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
             line-height: 1;
         }
 
@@ -217,7 +216,7 @@
         .log-header-count {
             font-size: 0.65rem;
             color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
         }
 
         .log-container {
@@ -238,7 +237,7 @@
             align-items: center;
             gap: 10px;
             padding: 8px 18px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
             font-size: 0.7rem;
             line-height: 1.4;
             transition: background 0.15s;
@@ -298,7 +297,7 @@
             font-size: 0.68rem;
             color: var(--text-dim);
             margin-top: 6px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
         }
 
         /* ── Footer ───────────────────────────────────────────── */
@@ -376,15 +375,39 @@
         var statusState = 'waiting';
         var stats = { total: 0, success: 0, errors: 0 };
         var logsCount = 0;
-        var seenRequests = {};
+        var MAX_LOG_ENTRIES = 10;
+        var SEEN_TTL_MS = 30000;
+        var SEEN_MAX = 200;
+        // Map + simple LRU eviction for request dedup (better than unbounded object)
+        var seenRequests = new Map();
+        var scrollPending = false;
 
-        // Clean up seen requests every 30 seconds
+        function markSeen(id) {
+            if (seenRequests.has(id)) {
+                seenRequests.delete(id); // refresh LRU order
+            }
+            seenRequests.set(id, Date.now());
+            while (seenRequests.size > SEEN_MAX) {
+                var oldest = seenRequests.keys().next().value;
+                seenRequests.delete(oldest);
+            }
+        }
+
+        function wasSeen(id) {
+            if (!seenRequests.has(id)) return false;
+            var t = seenRequests.get(id);
+            if (Date.now() - t > SEEN_TTL_MS) {
+                seenRequests.delete(id);
+                return false;
+            }
+            return true;
+        }
+
+        // Drop expired dedup entries periodically
         setInterval(function() {
             var now = Date.now();
-            Object.keys(seenRequests).forEach(function(key) {
-                if (now - seenRequests[key] > 30000) {
-                    delete seenRequests[key];
-                }
+            seenRequests.forEach(function(ts, key) {
+                if (now - ts > SEEN_TTL_MS) seenRequests.delete(key);
             });
         }, 30000);
 
@@ -413,6 +436,15 @@
             }
         }
 
+        function scheduleScrollBottom(container) {
+            if (scrollPending) return;
+            scrollPending = true;
+            requestAnimationFrame(function() {
+                scrollPending = false;
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
         function addLog(indicator, text, type) {
             type = type || 'info';
             var container = document.getElementById('log-container');
@@ -424,17 +456,31 @@
             var time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             var logEntry = document.createElement('div');
             logEntry.className = 'log-entry';
-            logEntry.innerHTML = `
-                <span class="log-time">${time}</span>
-                <span class="log-indicator ${indicator}"></span>
-                <span class="log-text ${type}">${text}</span>
-            `;
+            // Avoid template HTML injection; build nodes
+            var tEl = document.createElement('span');
+            tEl.className = 'log-time';
+            tEl.textContent = time;
+            var iEl = document.createElement('span');
+            iEl.className = 'log-indicator ' + indicator;
+            var xEl = document.createElement('span');
+            xEl.className = 'log-text ' + type;
+            xEl.textContent = text;
+            logEntry.appendChild(tEl);
+            logEntry.appendChild(iEl);
+            logEntry.appendChild(xEl);
             container.appendChild(logEntry);
             logsCount++;
-            document.getElementById('log-header-count').innerText = logsCount + ' entries';
+
+            // Cap DOM log nodes — primary fix for long-run RAM climb in the Canvas iframe
+            while (container.children.length > MAX_LOG_ENTRIES) {
+                container.removeChild(container.firstChild);
+            }
+
+            document.getElementById('log-header-count').innerText =
+                Math.min(logsCount, MAX_LOG_ENTRIES) + ' entries' +
+                (logsCount > MAX_LOG_ENTRIES ? ' (capped)' : '');
             
-            // Auto scroll to bottom
-            container.scrollTop = container.scrollHeight;
+            scheduleScrollBottom(container);
             
             // Stats handling
             if (type === 'success') {
@@ -461,8 +507,8 @@
             if (!data || data.source !== 'gemini-proxy-request') return;
 
             var id = data.id;
-            if (seenRequests[id]) return;
-            seenRequests[id] = Date.now();
+            if (wasSeen(id)) return;
+            markSeen(id);
 
             var method = data.method || 'POST';
             var path = data.path;

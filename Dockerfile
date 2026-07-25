@@ -73,6 +73,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # Privilege drop helper — entrypoint runs as root to chown
         # host-bind-mounted /browser-data, then exec's the stack as `proxy`.
         gosu \
+        # Auto-type keyring unlock dialogs (intermittent "peanuts" prompt)
+        xdotool \
         # Utilities
         ca-certificates \
         curl \

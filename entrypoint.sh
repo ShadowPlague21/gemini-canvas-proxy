@@ -216,7 +216,7 @@ env \
     --disable-session-crashed-bubble \
     --noerrdialogs \
     --renderer-process-limit=1 \
-    --js-flags="--max-old-space-size=1024" \
+    --js-flags="--max-old-space-size=768" \
     --disk-cache-size=10485760 \
     --media-cache-size=10485760 \
     --prerender-from-omnibox=disabled \
@@ -232,15 +232,21 @@ CHROMIUM_PID=$!
 
 # ── 3.5. Keyring Watchdog Daemon ─────────────────────────────────────────────
 # Automatically unlocks the keyring dialog if it appears on screen
+# Auto-dismiss intermittent "Unlock Login Keyring" / "Unlock" dialogs (type peanuts)
 if command -v xdotool >/dev/null 2>&1; then
-    echo "[entrypoint] Starting Keyring Watchdog Daemon"
+    echo "[entrypoint] Starting Keyring Watchdog Daemon (xdotool)"
     (
         while true; do
-            WID=$(xdotool search --onlyvisible --name "Unlock Keyring" 2>/dev/null | head -n 1)
+            # Broad match: titles vary ("Unlock Login Keyring", "Unlock Keyring", "Unlock")
+            WID=$(xdotool search --onlyvisible --name 'Unlock' 2>/dev/null | head -n 1)
+            if [ -z "$WID" ]; then
+                WID=$(xdotool search --onlyvisible --name 'Keyring' 2>/dev/null | head -n 1)
+            fi
             if [ -n "$WID" ]; then
-                echo "[watchdog] Found Unlock Keyring dialog. Automating unlock..."
-                xdotool windowactivate --sync "$WID"
-                xdotool type --delay 100 "peanuts"
+                echo "[watchdog] Keyring dialog window=$WID — typing peanuts"
+                xdotool windowactivate --sync "$WID" 2>/dev/null || true
+                sleep 0.2
+                xdotool type --delay 50 "peanuts"
                 xdotool key "Return"
                 sleep 5
             fi
@@ -249,7 +255,7 @@ if command -v xdotool >/dev/null 2>&1; then
     ) &
     WATCHDOG_PID=$!
 else
-    echo "[entrypoint] xdotool not found. Keyring Watchdog is disabled."
+    echo "[entrypoint] xdotool not found. Keyring Watchdog is disabled (install xdotool in image)."
     WATCHDOG_PID=""
 fi
 
