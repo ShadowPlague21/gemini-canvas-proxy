@@ -205,23 +205,22 @@ docker compose -f docker-compose.yml \
 
 ---
 
-## Available Models
+## Available Models & Context Windows
 
-The Canvas-injected key is model-scoped — it only works with models Canvas is currently promoting. Here are the tested models as of June 2026:
+The proxy exposes an **OpenAI-compatible `/v1/chat/completions` and `/v1/models` API**. You can use **ANY model name string** (Ollama, llama.cpp, OpenAI, Anthropic, Qwen, Mistral, or custom names) — the proxy accepts any requested model ID and echoes it back in the OpenAI completion response for 100% client UI compatibility.
 
-| Model ID | Name | Type | Status |
-|---|---|---|---|
-| `gemini-3-flash-preview` | Gemini 3 Flash | Text + Tools | ✅ Working |
-| `gemini-2.5-flash-preview-05-20` | Gemini 2.5 Flash | Text + Tools | ✅ Working |
-| `gemini-3.1-flash-image-preview` | Nano Banana 2 | Image Generation | ✅ Working |
-| `gemini-2.5-flash-image` | Nano Banana | Image Generation | ✅ Working |
-| `gemini-3.5-flash` | Gemini 3.5 Flash | Text | ❌ 403 (not Canvas-scoped) |
-| `gemini-3.1-flash-lite` | Gemini 3.1 Flash-Lite | Text | ❌ 403 (not Canvas-scoped) |
-| `gemini-3.1-pro-preview` | Gemini 3.1 Pro | Text | ❌ 403 (not Canvas-scoped) |
-| `gemini-2.5-pro-preview-04-09` | Gemini 2.5 Pro | Text | ❌ 403 (not Canvas-scoped) |
-| `gemini-3-pro-image-preview` | Nano Banana Pro | Image Generation | ❌ 403 (not Canvas-scoped) |
+### Model Endpoint & Context Window Specifications
 
-Google rotates the promoted model periodically. If you get a 403, the Canvas key isn't scoped for that model — try another from the working list above.
+| Model ID / Alias Category | Model Name | Target Engine | Context Window (Input) | Max Output | Status |
+|---|---|---|---|---|---|
+| `gemini-3-flash-preview` | Gemini 3 Flash | Native Gemini 3 | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Active & Promoted |
+| `gemini-2.5-flash` | Gemini 2.5 Flash | Native Gemini 2.5 | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Active & Promoted |
+| **OpenAI Aliases** (`gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`) | OpenAI Models | Auto-mapped | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Universal Mapping |
+| **Ollama / Llama Aliases** (`llama3`, `llama3:8b`, `llama3:70b`, `mistral`, `qwen2.5`) | Llama / Ollama | Auto-mapped | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Universal Mapping |
+| **Anthropic Aliases** (`claude-3-5-sonnet`, `claude-3-haiku`) | Claude Models | Auto-mapped | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Universal Mapping |
+| **Custom String** (e.g. `ollama/model`, `my-custom-llm`) | Custom Client ID | Auto-mapped | **1,048,576 Tokens** (1M) | 8,192 Tokens | ✅ Universal Mapping |
+
+> **Context Window Note:** Every endpoint provides a massive **1,048,576 Token Context Window** (1 Million Tokens) for long-context documents, codebase indexing, and multi-turn agentic workflows. Max output tokens per turn: **8,192 Tokens**.
 
 ---
 
@@ -229,9 +228,9 @@ Google rotates the promoted model periodically. If you get a 403, the Canvas key
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/v1/chat/completions` | POST | OpenAI-compatible chat completions (supports tools, streaming, multimodal) |
-| `/v1/models` | GET | List available models |
-| `/health` | GET | Health check |
+| `/v1/chat/completions` | POST | OpenAI-compatible chat completions (supports Ollama / llama.cpp / OpenAI / Claude formats) |
+| `/v1/models` | GET | List available models and context windows |
+| `/health` | GET | Health check endpoint |
 
 ### Features
 - ✅ **Chat completions** — text generation with system prompts

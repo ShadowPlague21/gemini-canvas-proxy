@@ -18,6 +18,8 @@ machine-id
 native_host/*.bat
 debug_output.txt
 commands.txt
+*.log
+scratch_*
 
 # Forensics / antigravity / probe scripts
 _*

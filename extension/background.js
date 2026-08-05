@@ -37,7 +37,7 @@ function connectNative() {
         console.log('[Proxy] Connected to native host');
     } catch (e) {
         console.error('[Proxy] Failed to connect to native host:', e);
-        setTimeout(connectNative, 2000);
+        setTimeout(connectNative, 3000);
         return;
     }
 
@@ -57,10 +57,18 @@ function connectNative() {
     });
 
     nativePort.onDisconnect.addListener(() => {
-        console.warn('[Proxy] Native host disconnected, reconnecting...');
+        const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Clean disconnect';
+        console.warn('[Proxy] Native host disconnected:', err);
         nativePort = null;
-        setTimeout(connectNative, 2000);
+        setTimeout(connectNative, 3000);
     });
+
+    // Handshake: send init message so native host knows we're ready
+    try {
+        nativePort.postMessage({ type: 'init' });
+    } catch (e) {
+        console.warn('[Proxy] Failed to send init:', e.message);
+    }
 }
 
 // ── API request forwarding ───────────────────────────────────────────────────
@@ -192,35 +200,41 @@ function discoverCanvasTab() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'get_config') {
         sendResponse(appConfig);
-        return;
+        return false;
     }
 
     if (message.type === 'page_ready') {
-        canvasTabId = sender.tab.id;
-        if (sender.tab && sender.tab.id != null) {
+        if (sender && sender.tab && sender.tab.id != null) {
+            canvasTabId = sender.tab.id;
             injectedTabs.add(sender.tab.id);
         }
         console.log('[Proxy] Canvas proxy page ready, tab:', canvasTabId);
         if (nativePort) {
-            nativePort.postMessage({ type: 'page_ready', tabId: canvasTabId });
+            try { nativePort.postMessage({ type: 'page_ready', tabId: canvasTabId }); } catch (e) {}
         }
         sendResponse({ ok: true });
+        return false;
     }
 
     if (message.type === 'api_response') {
         touchActivity();
         if (nativePort) {
-            nativePort.postMessage({
-                type: 'api_response',
-                id: message.id,
-                status: message.status,
-                data: message.data,
-                error: message.error
-            });
+            try {
+                nativePort.postMessage({
+                    type: 'api_response',
+                    id: message.id,
+                    status: message.status,
+                    data: message.data,
+                    error: message.error
+                });
+            } catch (e) {
+                console.warn('[Proxy] Failed to post to native host:', e.message);
+            }
         }
+        return false;
     }
 
-    return true;
+    return false;
 });
 
 // ── Tab lifecycle tracking ───────────────────────────────────────────────────

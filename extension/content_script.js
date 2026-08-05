@@ -6,6 +6,19 @@
  * and automatically navigates into the target chat thread & opens Canvas Preview.
  */
 
+function safeSendMessage(payload, callback) {
+    try {
+        if (typeof chrome !== 'undefined' && chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
+            const res = chrome.runtime.sendMessage(payload, callback);
+            if (res && typeof res.catch === 'function') {
+                res.catch(() => {});
+            }
+        }
+    } catch (e) {
+        // Silently ignore context invalidation after extension reload
+    }
+}
+
 // ── 1. Listen for messages from the Canvas iframe (via postMessage) ────────────
 
 window.addEventListener('message', (event) => {
@@ -15,13 +28,13 @@ window.addEventListener('message', (event) => {
     // Canvas proxy page is ready — notify background
     if (data.source === 'gemini-proxy-ready') {
         window.__geminiProxyReady = true;
-        chrome.runtime.sendMessage({ type: 'page_ready' });
+        safeSendMessage({ type: 'page_ready' });
         return;
     }
 
     // API response from the Canvas proxy page — forward to background
     if (data.source === 'gemini-proxy-response') {
-        chrome.runtime.sendMessage({
+        safeSendMessage({
             type: 'api_response',
             id: data.id,
             status: data.status,
@@ -65,8 +78,20 @@ function autoClickCanvasCard() {
     // Only run in top window
     if (window.self !== window.top) return;
 
-    // If proxy iframe is already active and ready, no clicking needed
+    // NEVER auto-click while user is typing or focusing an editor/textarea/input
+    const active = document.activeElement;
+    if (active && (
+        active.tagName === 'TEXTAREA' || 
+        active.tagName === 'INPUT' || 
+        active.isContentEditable || 
+        active.closest('.monaco-editor, .code-editor, [contenteditable="true"], form')
+    )) {
+        return;
+    }
+
+    // If proxy iframe is already active or ready, no clicking needed
     if (window.__geminiProxyReady) return;
+    if (document.querySelector('iframe[src*="blob:"], iframe[title*="preview" i], iframe[title*="sandbox" i]')) return;
 
     // A. Check for 'Preview' tab button if Canvas code tab is open
     const tabButtons = document.querySelectorAll('button, div, span, a, [role="tab"], [role="button"]');
@@ -74,10 +99,16 @@ function autoClickCanvasCard() {
         const txt = (el.textContent || '').trim().toLowerCase();
         if (txt === 'preview') {
             const clickable = el.closest('button') || el.closest('[role="tab"]') || el;
-            console.log("[Canvas Proxy Extension] Found 'Preview' button, clicking:", clickable);
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                clickable.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true, view: window }));
-            });
+            // If Preview tab is ALREADY selected or active — DO NOT fire click events!
+            const isSelected = clickable.getAttribute('aria-selected') === 'true' || 
+                               clickable.getAttribute('aria-pressed') === 'true' ||
+                               clickable.classList.contains('selected') ||
+                               clickable.classList.contains('active');
+            if (isSelected) {
+                return;
+            }
+            console.log("[Canvas Proxy Extension] Found unselected 'Preview' button, clicking once:", clickable);
+            clickable.click();
             return;
         }
     }
@@ -104,7 +135,8 @@ function autoClickCanvasCard() {
         }
     }
 
-    // C. Look for target Canvas card on the chat page
+    // C. Look for target Canvas card on the chat page ONLY if canvasCardName is explicitly set
+    if (!canvasCardName || !canvasCardName.trim()) return;
     const candidates = document.querySelectorAll('div, span, button, p, h1, h2, h3, h4, h5, h6, a, [role="button"]');
     const targetLower = canvasCardName.trim().toLowerCase();
     
@@ -115,25 +147,21 @@ function autoClickCanvasCard() {
         if (text === targetLower || (el.children.length <= 3 && text.includes(targetLower))) {
             const clickable = el.closest('button') || el.closest('[role="button"]') || el.closest('a') || el;
             console.log("[Canvas Proxy Extension] Found Canvas card, auto-clicking:", clickable);
-            
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(eventType => {
-                clickable.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true, view: window }));
-            });
+            clickable.click();
             break;
         }
     }
 }
 
-// Check every 1.5 seconds hands-free
+// Check every 2 minutes (120,000 ms) instead of 1.5 seconds so user can freely edit code
 setInterval(() => {
-    try {
-        chrome.runtime.sendMessage({ type: 'get_config' }, (config) => {
-            if (config) {
-                if (config.target_chat_id) targetChatId = config.target_chat_id;
-                if (config.canvas_card_name) canvasCardName = config.canvas_card_name;
-            }
-        });
-    } catch (e) {}
+    safeSendMessage({ type: 'get_config' }, (config) => {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) return;
+        if (config) {
+            if (config.target_chat_id) targetChatId = config.target_chat_id;
+            if (config.canvas_card_name) canvasCardName = config.canvas_card_name;
+        }
+    });
     
     autoClickCanvasCard();
-}, 1500);
+}, 120000);

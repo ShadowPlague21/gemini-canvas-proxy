@@ -13,7 +13,7 @@
             --surface: #0f1218;
             --surface-2: #161b24;
             --border: rgba(255, 255, 255, 0.06);
-            --border-bright: rgba(255, 255, 255, 0.1);
+            --border-bright: rgba(255, 255, 255, 0.12);
             --text: #e8edf5;
             --text-secondary: #7a8599;
             --text-dim: #4a5568;
@@ -23,7 +23,7 @@
             --green: #10b981;
             --green-glow: rgba(16, 185, 129, 0.15);
             --red: #ef4444;
-            --red-glow: rgba(239, 68, 68, 0.12);
+            --red-glow: rgba(239, 68, 68, 0.15);
             --yellow: #f59e0b;
             --yellow-glow: rgba(245, 158, 11, 0.12);
             --radius: 14px;
@@ -39,47 +39,47 @@
         }
 
         .app {
-            max-width: 580px;
+            max-width: 680px;
             margin: 0 auto;
-            padding: 32px 20px;
+            padding: 24px 16px;
         }
 
         /* ── Header ───────────────────────────────────────────── */
 
         .header {
-            margin-bottom: 28px;
+            margin-bottom: 20px;
         }
 
         .header-row {
             display: flex;
             align-items: center;
-            gap: 14px;
-            margin-bottom: 6px;
+            gap: 12px;
+            margin-bottom: 4px;
         }
 
         .header-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
             background: linear-gradient(135deg, var(--accent), #818cf8);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 16px;
             box-shadow: 0 0 20px var(--accent-glow);
         }
 
         .header h1 {
-            font-size: 1.2rem;
+            font-size: 1.15rem;
             font-weight: 700;
             letter-spacing: -0.03em;
             color: var(--text);
         }
 
         .header p {
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             color: var(--text-secondary);
-            margin-left: 54px;
+            margin-left: 48px;
         }
 
         /* ── Status Bar ───────────────────────────────────────── */
@@ -88,17 +88,17 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 14px 18px;
+            padding: 12px 16px;
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             transition: border-color 0.3s;
         }
 
-        .status-bar.online { border-color: rgba(16, 185, 129, 0.2); }
-        .status-bar.offline { border-color: rgba(239, 68, 68, 0.2); }
-        .status-bar.waiting { border-color: rgba(245, 158, 11, 0.2); }
+        .status-bar.online { border-color: rgba(16, 185, 129, 0.3); }
+        .status-bar.offline { border-color: rgba(239, 68, 68, 0.3); }
+        .status-bar.waiting { border-color: rgba(245, 158, 11, 0.3); }
 
         .status-dot {
             width: 9px;
@@ -126,7 +126,7 @@
         }
 
         .status-label {
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             font-weight: 600;
             color: var(--text);
         }
@@ -156,20 +156,20 @@
         .stats-row {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin-bottom: 16px;
+            gap: 10px;
+            margin-bottom: 14px;
         }
 
         .stat-card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            padding: 16px 14px;
+            padding: 12px 10px;
             text-align: center;
         }
 
         .stat-value {
-            font-size: 1.6rem;
+            font-size: 1.4rem;
             font-weight: 700;
             font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
             line-height: 1;
@@ -180,15 +180,15 @@
         .stat-value.error { color: var(--red); }
 
         .stat-label {
-            font-size: 0.62rem;
+            font-size: 0.6rem;
             color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 1.2px;
-            margin-top: 6px;
+            letter-spacing: 1px;
+            margin-top: 5px;
             font-weight: 500;
         }
 
-        /* ── Log ──────────────────────────────────────────────── */
+        /* ── Log Card & Header ───────────────────────────────── */
 
         .log-card {
             background: var(--surface);
@@ -201,8 +201,15 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 18px;
+            padding: 10px 14px;
             border-bottom: 1px solid var(--border);
+            background: var(--surface-2);
+        }
+
+        .log-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .log-header-title {
@@ -219,13 +226,44 @@
             font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
         }
 
+        .log-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-sm {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-bright);
+            color: var(--text-secondary);
+            font-size: 0.62rem;
+            padding: 3px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-sm:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+        }
+
+        .btn-sm.active {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* ── Log Container (100 Entries Max) ──────────────────── */
+
         .log-container {
-            max-height: 300px;
+            max-height: 420px;
             overflow-y: auto;
             padding: 4px 0;
         }
 
-        .log-container::-webkit-scrollbar { width: 5px; }
+        .log-container::-webkit-scrollbar { width: 6px; }
         .log-container::-webkit-scrollbar-track { background: transparent; }
         .log-container::-webkit-scrollbar-thumb {
             background: var(--border-bright);
@@ -234,12 +272,13 @@
 
         .log-entry {
             display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 18px;
+            flex-direction: column;
+            padding: 8px 14px;
             font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
             font-size: 0.7rem;
             line-height: 1.4;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            cursor: pointer;
             transition: background 0.15s;
         }
 
@@ -247,23 +286,29 @@
             background: rgba(255, 255, 255, 0.02);
         }
 
+        .log-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .log-time {
             color: var(--text-dim);
             flex-shrink: 0;
             font-size: 0.62rem;
-            min-width: 52px;
+            min-width: 54px;
         }
 
         .log-indicator {
-            width: 5px;
-            height: 5px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             flex-shrink: 0;
         }
 
         .log-indicator.request { background: var(--accent); }
         .log-indicator.success { background: var(--green); }
-        .log-indicator.error { background: var(--red); }
+        .log-indicator.error { background: var(--red); box-shadow: 0 0 6px var(--red-glow); }
         .log-indicator.info { background: var(--text-dim); }
 
         .log-text {
@@ -273,8 +318,30 @@
         }
 
         .log-text.success { color: var(--green); }
-        .log-text.error { color: var(--red); }
+        .log-text.error { color: var(--red); font-weight: 600; }
         .log-text.info { color: var(--text-secondary); }
+
+        /* ── Verbose Error Inspector Box ───────────────────────── */
+
+        .log-details-box {
+            margin-top: 6px;
+            margin-left: 64px;
+            padding: 10px 12px;
+            background: rgba(15, 18, 24, 0.95);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            color: #fca5a5;
+            font-size: 0.66rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+            overflow-x: auto;
+        }
+
+        .log-entry.has-details.expanded .log-details-box,
+        .log-entry.is-error.verbose-always .log-details-box {
+            display: block;
+        }
 
         .empty-state {
             text-align: center;
@@ -303,7 +370,7 @@
         /* ── Footer ───────────────────────────────────────────── */
 
         .footer {
-            margin-top: 20px;
+            margin-top: 16px;
             text-align: center;
             font-size: 0.62rem;
             color: var(--text-dim);
@@ -348,8 +415,14 @@
 
         <div class="log-card">
             <div class="log-header">
-                <span class="log-header-title">Activity Log</span>
-                <span id="log-header-count" class="log-header-count">0 entries</span>
+                <div class="log-header-left">
+                    <span class="log-header-title">Activity Log</span>
+                    <span id="log-header-count" class="log-header-count">0 / 100 entries</span>
+                </div>
+                <div class="log-controls">
+                    <button id="btn-verbose" class="btn-sm active" onclick="toggleVerboseMode()">Verbose Errors: ON</button>
+                    <button id="btn-clear" class="btn-sm" onclick="clearLogs()">Clear</button>
+                </div>
             </div>
             <div id="log-container" class="log-container">
                 <div id="empty-state" class="empty-state">
@@ -361,7 +434,7 @@
         </div>
 
         <div class="footer">
-            <a href="https://github.com/ShadowPlague21/gemini-canvas-proxy" target="_blank">gemini-canvas-proxy</a> · postMessage bridge · no WebSocket · no LNA issues
+            <a href="https://github.com/ShadowPlague21/gemini-canvas-proxy" target="_blank">gemini-canvas-proxy</a> · postMessage bridge · 100 Verbose Logs
         </div>
     </div>
 
@@ -375,16 +448,16 @@
         var statusState = 'waiting';
         var stats = { total: 0, success: 0, errors: 0 };
         var logsCount = 0;
-        var MAX_LOG_ENTRIES = 10;
+        var MAX_LOG_ENTRIES = 100; // Increased log limit to 100 entries
+        var verboseErrorsMode = true;
         var SEEN_TTL_MS = 30000;
         var SEEN_MAX = 200;
-        // Map + simple LRU eviction for request dedup (better than unbounded object)
         var seenRequests = new Map();
         var scrollPending = false;
 
         function markSeen(id) {
             if (seenRequests.has(id)) {
-                seenRequests.delete(id); // refresh LRU order
+                seenRequests.delete(id);
             }
             seenRequests.set(id, Date.now());
             while (seenRequests.size > SEEN_MAX) {
@@ -403,7 +476,6 @@
             return true;
         }
 
-        // Drop expired dedup entries periodically
         setInterval(function() {
             var now = Date.now();
             seenRequests.forEach(function(ts, key) {
@@ -445,7 +517,37 @@
             });
         }
 
-        function addLog(indicator, text, type) {
+        function toggleVerboseMode() {
+            verboseErrorsMode = !verboseErrorsMode;
+            var btn = document.getElementById('btn-verbose');
+            btn.innerText = 'Verbose Errors: ' + (verboseErrorsMode ? 'ON' : 'OFF');
+            btn.className = 'btn-sm ' + (verboseErrorsMode ? 'active' : '');
+            
+            // Toggle verbose class on log entries
+            var container = document.getElementById('log-container');
+            var entries = container.getElementsByClassName('log-entry');
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].classList.contains('is-error')) {
+                    if (verboseErrorsMode) entries[i].classList.add('verbose-always');
+                    else entries[i].classList.remove('verbose-always');
+                }
+            }
+        }
+
+        function clearLogs() {
+            var container = document.getElementById('log-container');
+            container.innerHTML = '';
+            logsCount = 0;
+            document.getElementById('log-header-count').innerText = '0 / 100 entries';
+            
+            var emptyState = document.createElement('div');
+            emptyState.id = 'empty-state';
+            emptyState.className = 'empty-state';
+            emptyState.innerHTML = '<div class="empty-state-icon">📡</div><div class="empty-state-text">Waiting for requests</div><div class="empty-state-hint">curl http://127.0.0.1:8765/v1/chat/completions</div>';
+            container.appendChild(emptyState);
+        }
+
+        function addLog(indicator, text, type, verboseDetails) {
             type = type || 'info';
             var container = document.getElementById('log-container');
             var emptyState = document.getElementById('empty-state');
@@ -455,29 +557,49 @@
             
             var time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             var logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            // Avoid template HTML injection; build nodes
+            logEntry.className = 'log-entry ' + (type === 'error' ? 'is-error ' + (verboseErrorsMode ? 'verbose-always' : '') : '');
+            
+            var row = document.createElement('div');
+            row.className = 'log-row';
+            
             var tEl = document.createElement('span');
             tEl.className = 'log-time';
             tEl.textContent = time;
+            
             var iEl = document.createElement('span');
             iEl.className = 'log-indicator ' + indicator;
+            
             var xEl = document.createElement('span');
             xEl.className = 'log-text ' + type;
             xEl.textContent = text;
-            logEntry.appendChild(tEl);
-            logEntry.appendChild(iEl);
-            logEntry.appendChild(xEl);
+            
+            row.appendChild(tEl);
+            row.appendChild(iEl);
+            row.appendChild(xEl);
+            logEntry.appendChild(row);
+
+            if (verboseDetails) {
+                logEntry.classList.add('has-details');
+                var detailsBox = document.createElement('div');
+                detailsBox.className = 'log-details-box';
+                detailsBox.textContent = typeof verboseDetails === 'object' ? JSON.stringify(verboseDetails, null, 2) : String(verboseDetails);
+                logEntry.appendChild(detailsBox);
+                
+                logEntry.onclick = function() {
+                    logEntry.classList.toggle('expanded');
+                };
+            }
+
             container.appendChild(logEntry);
             logsCount++;
 
-            // Cap DOM log nodes — primary fix for long-run RAM climb in the Canvas iframe
+            // Cap DOM log nodes to 100 entries max
             while (container.children.length > MAX_LOG_ENTRIES) {
                 container.removeChild(container.firstChild);
             }
 
             document.getElementById('log-header-count').innerText =
-                Math.min(logsCount, MAX_LOG_ENTRIES) + ' entries' +
+                Math.min(logsCount, MAX_LOG_ENTRIES) + ' / 100 entries' +
                 (logsCount > MAX_LOG_ENTRIES ? ' (capped)' : '');
             
             scheduleScrollBottom(container);
@@ -499,7 +621,7 @@
         setTimeout(function() {
             window.parent.postMessage({ source: 'gemini-proxy-ready' }, '*');
             updateStatus('online');
-            addLog('info', 'Proxy ready — waiting for requests', 'info');
+            addLog('info', 'Proxy ready — 100 verbose logs active', 'info');
         }, 500);
 
         window.addEventListener('message', function(event) {
@@ -515,34 +637,77 @@
             var body = data.body;
             var headers = data.headers;
             
-            addLog('request', method + ' ' + path.replace('/v1beta/models/', '').replace(':generateContent', ''));
+            var displayPath = path.replace('/v1beta/models/', '').replace(':generateContent', '');
+            addLog('request', method + ' ' + displayPath);
 
             var url = 'https://generativelanguage.googleapis.com' + path;
             if (apiKey) {
                 url += (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(apiKey);
             }
 
-            fetch(url, {
-                method: method,
-                headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
-                body: body ? JSON.stringify(body) : undefined
-            }).then(function(response) {
-                addLog(response.ok ? 'success' : 'error',
-                    response.status + ' ' + (response.ok ? 'OK' : (response.statusText || 'Error')),
-                    response.ok ? 'success' : 'error');
-                return response.json().catch(function() { return {}; }).then(function(respData) {
-                    window.parent.postMessage({
-                        source: 'gemini-proxy-response',
-                        id: id,
-                        status: response.status,
-                        data: respData,
-                        error: response.ok ? null : 'API ' + response.status
-                    }, '*');
+            function executeFetch(retryCount) {
+                retryCount = retryCount || 0;
+                fetch(url, {
+                    method: method,
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
+                    body: body ? JSON.stringify(body) : undefined
+                }).then(function(response) {
+                    return response.text().then(function(text) {
+                        var respData;
+                        try {
+                            respData = JSON.parse(text);
+                        } catch (e) {
+                            respData = { rawText: text ? text.substring(0, 1500) : 'Empty response body' };
+                        }
+
+                        // Multi-attempt auto-retry on transient 401/429 rate limits (up to 3 retries)
+                        if (!response.ok && (response.status === 401 || response.status === 429) && retryCount < 3) {
+                            var delay = (retryCount + 1) * 1500;
+                            addLog('info', 'Retrying request (attempt ' + (retryCount + 1) + '/3) in ' + (delay / 1000) + 's after ' + response.status + '...', 'info');
+                            setTimeout(function() { executeFetch(retryCount + 1); }, delay);
+                            return;
+                        }
+
+                        if (response.ok) {
+                            addLog('success', response.status + ' OK — ' + displayPath, 'success');
+                        } else {
+                            var errorSummary = response.status + ' ' + (response.statusText || 'API Error') + ' [' + displayPath + ']';
+                            var verbosePayload = {
+                                status: response.status,
+                                statusText: response.statusText,
+                                endpoint: path,
+                                targetModel: displayPath,
+                                geminiApiResponse: respData
+                            };
+                            addLog('error', errorSummary, 'error', verbosePayload);
+                        }
+
+                        window.parent.postMessage({
+                            source: 'gemini-proxy-response',
+                            id: id,
+                            status: response.status,
+                            data: respData,
+                            error: response.ok ? null : 'API ' + response.status
+                        }, '*');
+                    });
+                }).catch(function(err) {
+                    if (retryCount < 3) {
+                        var delay = (retryCount + 1) * 1500;
+                        setTimeout(function() { executeFetch(retryCount + 1); }, delay);
+                        return;
+                    }
+                    var netErrorPayload = {
+                        error: err.message,
+                        stack: err.stack,
+                        endpoint: path,
+                        targetModel: displayPath
+                    };
+                    addLog('error', 'Network/Fetch Failure: ' + err.message, 'error', netErrorPayload);
+                    window.parent.postMessage({ source: 'gemini-proxy-response', id: id, error: err.message }, '*');
                 });
-            }).catch(function(err) {
-                addLog('error', err.message, 'error');
-                window.parent.postMessage({ source: 'gemini-proxy-response', id: id, error: err.message }, '*');
-            });
+            }
+
+            executeFetch(0);
         });
     </script>
 </body>
