@@ -42,12 +42,12 @@ mkdir -p "$CHROMIUM_USER_DATA_DIR" "$NATIVE_HOST_DIR"
 
 # Preflight: Copy chrome native messaging host manifest template if it doesn't
 # already exist. The setup-extension.sh step modifies this with the real extension ID.
-if [ ! -f "$NATIVE_HOST_DIR/com.google.gemini_proxy.json" ]; then
+if [ ! -f "$NATIVE_HOST_DIR/com.gemini.proxy.json" ]; then
     echo "[entrypoint] Initializing native messaging host manifest"
     mkdir -p /tmp/manifest
-    cat << 'EOF' > "$NATIVE_HOST_DIR/com.google.gemini_proxy.json"
+    cat << 'EOF' > "$NATIVE_HOST_DIR/com.gemini.proxy.json"
 {
-  "name": "com.google.gemini_proxy",
+  "name": "com.gemini.proxy",
   "description": "Gemini Canvas Proxy native messaging helper",
   "path": "/app/native_host/gemini_proxy.py",
   "type": "stdio",
