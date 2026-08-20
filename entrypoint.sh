@@ -224,6 +224,10 @@ env \
     --password-store=gnome-libsecret \
     --account-consistency=disabled \
     --load-extension=/app/extension \
+    --disable-smooth-scrolling \
+    --enable-features=IntensiveWakeUpThrottling:grace_period_seconds/10,QuickIntensiveWakeUpThrottlingAfterLoading \
+    --disable-background-timer-throttling=false \
+    --disable-renderer-backgrounding=false \
     --enable-logging=stderr \
     --v=1 \
     "$START_PAGE" \
@@ -236,7 +240,8 @@ CHROMIUM_PID=$!
 if command -v xdotool >/dev/null 2>&1; then
     echo "[entrypoint] Starting Keyring Watchdog Daemon (xdotool)"
     (
-        while true; do
+        # Bounded watchdog: monitors for up to 90s during startup then terminates
+        for _ in $(seq 1 45); do
             # Broad match: titles vary ("Unlock Login Keyring", "Unlock Keyring", "Unlock")
             WID=$(xdotool search --onlyvisible --name 'Unlock' 2>/dev/null | head -n 1)
             if [ -z "$WID" ]; then

@@ -544,22 +544,6 @@ class APIHandler(BaseHTTPRequestHandler):
                 {"id": "gemini-3.1-flash-image-preview", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana 2 — AI Image Generation & Retouching"},
                 {"id": "gemini-2.5-flash-image", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana — AI Image Generation & Retouching"},
                 
-                # OpenAI Aliases
-                {"id": "gpt-4o", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4o alias (1M Context Window)"},
-                {"id": "gpt-4o-mini", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4o-mini alias (1M Context Window)"},
-                {"id": "gpt-4-turbo", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4-turbo alias (1M Context Window)"},
-                {"id": "gpt-3.5-turbo", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-3.5-turbo alias (1M Context Window)"},
-                
-                # Llama / Ollama / Open-Source Aliases
-                {"id": "llama3", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 alias (1M Context Window)"},
-                {"id": "llama3:8b", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 8B alias (1M Context Window)"},
-                {"id": "llama3:70b", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 70B alias (1M Context Window)"},
-                {"id": "mistral", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Mistral alias (1M Context Window)"},
-                {"id": "qwen2.5", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Qwen 2.5 alias (1M Context Window)"},
-                
-                # Anthropic Aliases
-                {"id": "claude-3-5-sonnet", "object": "model", "owned_by": "anthropic-alias", "context_window": 1048576, "description": "Claude 3.5 Sonnet alias (1M Context Window)"},
-                {"id": "claude-3-haiku", "object": "model", "owned_by": "anthropic-alias", "context_window": 1048576, "description": "Claude 3 Haiku alias (1M Context Window)"}
             ]
             self._json_response(200, {"object": "list", "data": models})
         elif self.path == '/health':
