@@ -216,7 +216,7 @@ env \
     --disable-session-crashed-bubble \
     --noerrdialogs \
     --renderer-process-limit=1 \
-    --js-flags="--max-old-space-size=768" \
+    --js-flags="--max-old-space-size=384" \
     --disk-cache-size=10485760 \
     --media-cache-size=10485760 \
     --prerender-from-omnibox=disabled \
@@ -224,10 +224,21 @@ env \
     --password-store=gnome-libsecret \
     --account-consistency=disabled \
     --load-extension=/app/extension \
+    --disable-audio \
+    --mute-audio \
+    --disable-speech-api \
+    --disable-crash-reporter \
+    --disable-breakpad \
+    --disable-renderer-accessibility \
+    --num-raster-threads=1 \
+    --disable-background-networking \
+    --disable-component-update \
+    --disable-domain-reliability \
+    --disable-sync \
+    --disable-translate \
+    --disable-ipc-flooding-protection \
     --disable-smooth-scrolling \
     --enable-features=IntensiveWakeUpThrottling:grace_period_seconds/10,QuickIntensiveWakeUpThrottlingAfterLoading \
-    --disable-background-timer-throttling=false \
-    --disable-renderer-backgrounding=false \
     --enable-logging=stderr \
     --v=1 \
     "$START_PAGE" \
@@ -235,13 +246,11 @@ env \
 CHROMIUM_PID=$!
 
 # ── 3.5. Keyring Watchdog Daemon ─────────────────────────────────────────────
-# Automatically unlocks the keyring dialog if it appears on screen
-# Auto-dismiss intermittent "Unlock Login Keyring" / "Unlock" dialogs (type peanuts)
+# Automatically unlocks the keyring dialog if it appears on screen during boot
 if command -v xdotool >/dev/null 2>&1; then
-    echo "[entrypoint] Starting Keyring Watchdog Daemon (xdotool)"
+    echo "[entrypoint] Starting Keyring Watchdog Daemon (xdotool, bounded 60s)"
     (
-        # Bounded watchdog: monitors for up to 90s during startup then terminates
-        for _ in $(seq 1 45); do
+        for _ in $(seq 1 30); do
             # Broad match: titles vary ("Unlock Login Keyring", "Unlock Keyring", "Unlock")
             WID=$(xdotool search --onlyvisible --name 'Unlock' 2>/dev/null | head -n 1)
             if [ -z "$WID" ]; then
@@ -257,6 +266,7 @@ if command -v xdotool >/dev/null 2>&1; then
             fi
             sleep 2
         done
+        echo "[watchdog] Keyring Watchdog finished initial startup window."
     ) &
     WATCHDOG_PID=$!
 else

@@ -582,7 +582,11 @@
                 logEntry.classList.add('has-details');
                 var detailsBox = document.createElement('div');
                 detailsBox.className = 'log-details-box';
-                detailsBox.textContent = typeof verboseDetails === 'object' ? JSON.stringify(verboseDetails, null, 2) : String(verboseDetails);
+                var detStr = typeof verboseDetails === 'object' ? JSON.stringify(verboseDetails, null, 2) : String(verboseDetails);
+                if (detStr.length > 2000) {
+                    detStr = detStr.substring(0, 2000) + '\n... (truncated to save memory)';
+                }
+                detailsBox.textContent = detStr;
                 logEntry.appendChild(detailsBox);
                 
                 logEntry.onclick = function() {

@@ -205,6 +205,38 @@ docker compose -f docker-compose.yml \
 
 ---
 
+## 🔐 Why Session Persistence Actually Works (The Anti-Logout Architecture)
+
+Most headless or containerized Chromium setups fail on Google authentication: users find themselves logged out after a container restart, a host reboot, or even after a few idle hours. This project solves that permanently through four coordinated architectural layers:
+
+### 1. GNOME Keyring & Headless D-Bus Secret Service
+- **The Problem:** Modern Chromium on Linux encrypts its SQLite cookie database (`Cookies` table, `encrypted_value` column) using OS-level credential managers (libsecret / GNOME Keyring). When containers use flags like `--use-mock-keychain` or `--password-store=basic`, Chromium generates transient in-memory encryption keys that corrupt or become unreadable upon container recreation.
+- **The Solution:** The container boots an isolated D-Bus session (`dbus-daemon --session`) and spawns `gnome-keyring-daemon` with the `secrets` component. On startup, `entrypoint.sh` automatically unlocks the default login keyring using an internal secret token (`peanuts`) via Python `keyring` and SecretService. Chromium is strictly invoked with `--password-store=gnome-libsecret`. Cookie decryption keys are persisted reliably across all restarts.
+
+### 2. Google Account Reconciler Suppression (`BrowserSignin: 0`)
+- **The Problem:** Even with persistent cookies, Google deploys an internal client mechanism called the **Account Reconciler**. If Chromium detects that the browser profile itself is not signed into Google Chrome Sync (which is disabled in headless/container environments), the reconciler assumes a state mismatch between the browser profile and web cookies, proactively firing `PerformLogoutAllAccountsAction` and invalidating your `.google.com` `SID`, `HSID`, and `SSID` session tokens!
+- **The Solution:** The repository mounts enterprise managed policies directly into `/etc/chromium/policies/managed/default.json`:
+  ```json
+  {
+    "BrowserSignin": 0,
+    "SyncDisabled": true
+  }
+  ```
+  Combined with `signin.allowed=false` written into the Chromium profile `Preferences`, Chrome's account reconciler is completely suppressed. Google web authentication remains durable and never self-invalidates.
+
+### 3. Stable `machine-id` Bind Mount
+- **The Problem:** D-Bus and GNOME Keyring derive host encryption seeds from `/etc/machine-id`. When Podman or Docker recreates a container (e.g. image updates, git pulls), a fresh random `machine-id` is generated, causing GNOME Keyring to treat the existing keyring file as foreign and unreadable.
+- **The Solution:** The project provides a persistent `machine-id` file at the repository root that is bind-mounted directly to `/etc/machine-id` and `/var/lib/dbus/machine-id` inside the container. Key derivation remains 100% deterministic across container lifecycles.
+
+### 4. SPA-Aware Navigation & DOM Quenching (`content_script.js`)
+- **The Problem:** Pointing Chromium directly to a deep conversation URL (`https://gemini.google.com/app/<chat-id>`) causes Gemini's Angular SPA client-side router to drop route context and revert to a blank homepage. Furthermore, continuous DOM queries and blinking Monaco text carets burn continuous software CPU cycles in headless Xvfb.
+- **The Solution:**
+  - **Base URL Entry:** Chromium boots cleanly to `https://gemini.google.com/app`.
+  - **Synthetic Event Dispatch:** Once Angular initializes, the extension dispatches a full synthetic mouse event sequence (`pointerdown`, `mousedown`, `pointerup`, `mouseup`, `click`) guarded by strict DOM element visibility checks (`isVisible()`) to open the target thread and activate the Canvas preview card.
+  - **Resource Quenching:** Once `window.__geminiProxyReady` is reached, background polling completely self-terminates (`clearInterval(navInterval)`), and CSS animations/carets are suppressed so the container idles at ~0% CPU.
+
+---
+
 ## Available Models & Context Windows
 
 The proxy exposes an **OpenAI-compatible `/v1/chat/completions` and `/v1/models` API**. You can use **ANY model name string** (Ollama, llama.cpp, OpenAI, Anthropic, Qwen, Mistral, or custom names) — the proxy accepts any requested model ID and echoes it back in the OpenAI completion response for 100% client UI compatibility.

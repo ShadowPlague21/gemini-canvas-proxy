@@ -6,6 +6,35 @@
  * and automatically navigates into the target chat thread & opens Canvas Preview.
  */
 
+// ── CPU / RAM Saver: Suppress CSS animations, transitions & blinking carets in headless Xvfb ──
+function injectResourceSaver() {
+    try {
+        if (document.getElementById('gemini-resource-saver')) return;
+        const style = document.createElement('style');
+        style.id = 'gemini-resource-saver';
+        style.textContent = `
+            *, *::before, *::after {
+                animation-duration: 0.0001s !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.0001s !important;
+                caret-color: transparent !important;
+            }
+            .monaco-editor .cursors-layer .cursor {
+                visibility: hidden !important;
+                animation: none !important;
+            }
+            canvas:not([id*="preview"]):not([class*="preview"]) {
+                display: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    } catch (e) {}
+}
+injectResourceSaver();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectResourceSaver);
+}
+
 function safeSendMessage(payload, callback) {
     try {
         if (typeof chrome !== 'undefined' && chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
@@ -28,10 +57,11 @@ function dispatchFullClick(el) {
 
 function isVisible(el) {
     if (!el) return false;
-    if (el.offsetWidth === 0 || el.offsetHeight === 0) return false;
+    if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    return true;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
 }
 
 // ── 1. Listen for messages from the Canvas iframe (via postMessage) ────────────
@@ -49,7 +79,6 @@ window.addEventListener('message', (event) => {
 
     // API response from the Canvas proxy page — forward to background
     if (data.source === 'gemini-proxy-response') {
-        window.__geminiProxyReady = true;
         safeSendMessage({
             type: 'api_response',
             id: data.id,
@@ -176,9 +205,12 @@ function autoClickCanvasCard() {
     }
 }
 
-// Check every 2 seconds (2000 ms) instead of 120000ms
-setInterval(() => {
-    if (window.__geminiProxyReady) return;
+// Check every 2 seconds until proxy is ready, then completely back off
+let navInterval = setInterval(() => {
+    if (window.__geminiProxyReady) {
+        clearInterval(navInterval);
+        return;
+    }
     safeSendMessage({ type: 'get_config' }, (config) => {
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) return;
         if (config) {
@@ -191,17 +223,34 @@ setInterval(() => {
     autoClickCanvasCard();
 }, 2000);
 
-window.addEventListener('popstate', () => { window.__geminiProxyReady = false; });
-window.addEventListener('beforeunload', () => { window.__geminiProxyReady = false; });
+function restartNavInterval() {
+    if (navInterval) clearInterval(navInterval);
+    navInterval = setInterval(() => {
+        if (window.__geminiProxyReady) {
+            clearInterval(navInterval);
+            return;
+        }
+        autoClickCanvasCard();
+    }, 2000);
+}
 
-// Intercept SPA navigation to reset readiness if user or app leaves the target conversation
+window.addEventListener('popstate', () => { 
+    window.__geminiProxyReady = false; 
+    restartNavInterval();
+});
+window.addEventListener('beforeunload', () => { 
+    window.__geminiProxyReady = false; 
+});
+
 const _origPushState = history.pushState;
 history.pushState = function() {
     window.__geminiProxyReady = false;
+    restartNavInterval();
     return _origPushState.apply(this, arguments);
 };
 const _origReplaceState = history.replaceState;
 history.replaceState = function() {
     window.__geminiProxyReady = false;
+    restartNavInterval();
     return _origReplaceState.apply(this, arguments);
 };

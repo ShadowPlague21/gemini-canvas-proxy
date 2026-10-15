@@ -48,7 +48,7 @@ from queue import Queue, Empty
 
 request_lock = threading.Lock()
 last_request_time = 0.0
-LOG_FILE_PATH = "/tmp/proxy_requests.log" # os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxy_requests.log")
+LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxy_requests.log")
 
 def write_request_log(req_id, model, body, gemini_body, status, resp_data, error_msg):
     """Write request & response details to proxy_requests.log so AI assistant and user can inspect errors."""
@@ -207,8 +207,6 @@ def openai_to_gemini(body):
                 args_str = func.get('arguments', '{}')
                 try:
                     args_parsed = json.loads(args_str)
-                    if not isinstance(args_parsed, dict):
-                        args_parsed = {}
                 except Exception:
                     args_parsed = {}
                 fc_part = {"functionCall": {"name": func.get('name', ''), "args": args_parsed}}
@@ -238,10 +236,6 @@ def openai_to_gemini(body):
                 result_obj = json.loads(result_text)
             except Exception:
                 result_obj = {"output": result_text}
-
-            # Gemini protobuf Struct requires a JSON object / dict; wrap lists or primitives
-            if not isinstance(result_obj, dict):
-                result_obj = {"output": result_obj}
             
             pending_tool_parts.append({
                 "functionResponse": {"name": func_name, "response": result_obj}
@@ -459,8 +453,6 @@ def gemini_to_openai(gemini_response, model):
         finish_reason = candidate.get('finishReason', 'stop').lower()
         if finish_reason == 'max_tokens':
             finish_reason = 'length'
-        elif finish_reason == 'malformed_function_call' and not tool_calls:
-            finish_reason = 'stop'
 
         # Combine text and image parts into content
         content = '\n'.join(text_parts + image_parts) or None
@@ -509,23 +501,27 @@ def _extract_usage(gemini_response):
 
 VALID_CANVAS_MODELS = {
     "gemini-3-flash-preview",
+    "gemini-3.1-flash-image-preview",
     "gemini-2.5-flash",
     "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-flash-preview-04-17",
+    "gemini-2.5-flash-preview-09-2025",
+    "gemini-2.5-flash-image",
+    "gemini-2.5-flash-image-preview",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-3.1-flash-image-preview",
-    "gemini-2.5-flash-image"
 }
 
 def resolve_model_name(requested_model):
-    """Fallback unlisted or OpenAI model names (e.g. gpt-4o-mini, gpt-3.5-turbo) to gemini-3-flash-preview."""
+    """Resolve model name, supporting raw pass-through for probing and aliases."""
     if not requested_model or not isinstance(requested_model, str):
         return "gemini-3-flash-preview"
-    req_lower = requested_model.lower()
+    req_lower = requested_model.lower().strip()
+    if req_lower.startswith("raw:"):
+        return req_lower[4:]
+    if req_lower.startswith("gemini-") or req_lower.startswith("imagen-") or req_lower.startswith("models/"):
+        return req_lower.replace("models/", "")
     if req_lower in VALID_CANVAS_MODELS:
-        # Avoid 403 endpoints; promoted model is gemini-3-flash-preview
-        if req_lower in ("gemini-3-flash-preview", "gemini-3.1-flash-image-preview", "gemini-2.5-flash-image"):
-            return req_lower
+        return req_lower
     return "gemini-3-flash-preview"
 
 
@@ -543,17 +539,42 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_GET(self):
+        if self.path == '/v1/probe':
+            self._handle_probe_models()
+            return
         if self.path in ('/v1/models', '/models'):
             models = [
-                # Gemini Primary Models
-                {"id": "gemini-3-flash-preview", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 3 Flash — 1,048,576 Token Context Window"},
-                {"id": "gemini-2.5-flash", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 2.5 Flash — 1,048,576 Token Context Window"},
-                {"id": "gemini-2.5-flash-preview-05-20", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 2.5 Flash Preview"},
-                {"id": "gemini-3.1-flash-image-preview", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana 2 — AI Image Generation & Retouching"},
-                {"id": "gemini-2.5-flash-image", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana — AI Image Generation & Retouching"},
+                # Verified Active Gemini Primary Models
+                {"id": "gemini-4-argon", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 4 Argon — Frontier Reasoning (Note: Often 403 on Canvas keys)"},
+                {"id": "gemini-3.8-flash", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 3.8 Flash — High-efficiency (Active)"},
+                {"id": "gemini-3.8-live", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 3.8 Live — Low-latency (Active)"},
+                {"id": "gemini-3-flash-preview", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 3 Flash Preview — Flagship 1M Context Window (Active)"},
+                {"id": "gemini-2.5-flash", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 2.5 Flash — Stable 1M Context Window (Active)"},
+                {"id": "gemini-2.5-flash-preview-05-20", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 2.5 Flash Preview Checkpoint (Active)"},
+                {"id": "gemini-2.0-flash", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Gemini 2.0 Flash — Low Latency (Active)"},
+                {"id": "gemini-3.1-flash-image-preview", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana 2 — AI Image Generation & Retouching (Active)"},
+                {"id": "gemini-2.5-flash-image", "object": "model", "owned_by": "google", "context_window": 1048576, "description": "Nano Banana — AI Image Generation & Retouching (Active)"},
                 
+                # OpenAI Aliases (auto-mapped to gemini-3-flash-preview)
+                {"id": "gpt-4o", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4o alias -> gemini-3-flash-preview"},
+                {"id": "gpt-4o-mini", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4o-mini alias -> gemini-3-flash-preview"},
+                {"id": "gpt-4-turbo", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-4-turbo alias -> gemini-3-flash-preview"},
+                {"id": "gpt-3.5-turbo", "object": "model", "owned_by": "openai-alias", "context_window": 1048576, "description": "OpenAI gpt-3.5-turbo alias -> gemini-3-flash-preview"},
+                
+                # Llama / Ollama / Open-Source Aliases (auto-mapped to gemini-3-flash-preview)
+                {"id": "llama3", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 alias -> gemini-3-flash-preview"},
+                {"id": "llama3:8b", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 8B alias -> gemini-3-flash-preview"},
+                {"id": "llama3:70b", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Llama 3 70B alias -> gemini-3-flash-preview"},
+                {"id": "mistral", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Mistral alias -> gemini-3-flash-preview"},
+                {"id": "qwen2.5", "object": "model", "owned_by": "ollama-alias", "context_window": 1048576, "description": "Qwen 2.5 alias -> gemini-3-flash-preview"},
+                
+                # Anthropic Aliases (auto-mapped to gemini-3-flash-preview)
+                {"id": "claude-3-5-sonnet", "object": "model", "owned_by": "anthropic-alias", "context_window": 1048576, "description": "Claude 3.5 Sonnet alias -> gemini-3-flash-preview"},
+                {"id": "claude-3-haiku", "object": "model", "owned_by": "anthropic-alias", "context_window": 1048576, "description": "Claude 3 Haiku alias -> gemini-3-flash-preview"}
             ]
             self._json_response(200, {"object": "list", "data": models})
+        elif self.path in ('/probe/models', '/v1beta/models'):
+            self._handle_probe_models()
         elif self.path == '/health':
             self._json_response(200, {"status": "ok"})
         elif self.path.startswith('/internal/payload/'):
@@ -565,6 +586,41 @@ class APIHandler(BaseHTTPRequestHandler):
                 self._json_error(404, "Payload not found or already consumed")
         else:
             self.send_error(404)
+
+    def _handle_probe_models(self):
+        """Forward GET /v1beta/models directly to Canvas to probe API key permissions."""
+        req_id = str(uuid.uuid4())
+        response_queue = Queue()
+        pending_requests[req_id] = response_queue
+        message_payload = {
+            "type": "api_request",
+            "id": req_id,
+            "method": "GET",
+            "path": "/v1beta/models",
+            "headers": {}
+        }
+        with request_lock:
+            try:
+                send_message(message_payload)
+            except NativeMessagingDisconnectedError:
+                pending_requests.pop(req_id, None)
+                self._json_error(502, "Chrome Extension channel disconnected.")
+                return
+
+            try:
+                resp = response_queue.get(timeout=30)
+            except Empty:
+                pending_requests.pop(req_id, None)
+                self._json_error(504, "Gateway Timeout — Canvas tab may be unresponsive")
+                return
+
+        pending_requests.pop(req_id, None)
+        if resp.get('error'):
+            error_detail = resp.get('data')
+            msg = f"{resp.get('error')}: {error_detail}" if error_detail else resp.get('error')
+            self._json_error(resp.get('status', 502), msg)
+        else:
+            self._json_response(200, resp.get('data', {}))
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -646,8 +702,10 @@ class APIHandler(BaseHTTPRequestHandler):
         pending_requests.pop(req_id, None)
 
         if resp.get('error'):
-            write_request_log(req_id, model, body, gemini_body, resp.get('status', 502), resp.get('data'), resp.get('error'))
-            self._json_error(502, resp['error'])
+            error_detail = resp.get('data')
+            write_request_log(req_id, model, body, gemini_body, resp.get('status', 502), error_detail, resp.get('error'))
+            err_msg = f"{resp.get('error')}: {error_detail}" if error_detail else resp.get('error')
+            self._json_error(resp.get('status', 502), err_msg)
             return
 
         openai_response = gemini_to_openai(resp.get('data', {}), raw_model)

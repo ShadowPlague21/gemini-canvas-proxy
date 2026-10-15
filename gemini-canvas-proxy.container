@@ -44,10 +44,10 @@ AddCapability=CAP_IPC_LOCK
 StartLimitIntervalSec=0
 Restart=always
 RestartSec=10
-# ~2G matches a stable small-homelab profile; lower if needed
-MemoryMax=2048M
+# Lean configuration: limit CPU and memory usage
+MemoryMax=1024M
 MemorySwapMax=0
-CPUQuota=200%
+CPUQuota=100%
 CPUWeight=100
 
 [Install]
