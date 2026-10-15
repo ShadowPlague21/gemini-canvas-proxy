@@ -48,7 +48,7 @@ from queue import Queue, Empty
 
 request_lock = threading.Lock()
 last_request_time = 0.0
-LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxy_requests.log")
+LOG_FILE_PATH = "/tmp/proxy_requests.log" # os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxy_requests.log")
 
 def write_request_log(req_id, model, body, gemini_body, status, resp_data, error_msg):
     """Write request & response details to proxy_requests.log so AI assistant and user can inspect errors."""
@@ -207,6 +207,8 @@ def openai_to_gemini(body):
                 args_str = func.get('arguments', '{}')
                 try:
                     args_parsed = json.loads(args_str)
+                    if not isinstance(args_parsed, dict):
+                        args_parsed = {}
                 except Exception:
                     args_parsed = {}
                 fc_part = {"functionCall": {"name": func.get('name', ''), "args": args_parsed}}
@@ -236,6 +238,10 @@ def openai_to_gemini(body):
                 result_obj = json.loads(result_text)
             except Exception:
                 result_obj = {"output": result_text}
+
+            # Gemini protobuf Struct requires a JSON object / dict; wrap lists or primitives
+            if not isinstance(result_obj, dict):
+                result_obj = {"output": result_obj}
             
             pending_tool_parts.append({
                 "functionResponse": {"name": func_name, "response": result_obj}
@@ -453,6 +459,8 @@ def gemini_to_openai(gemini_response, model):
         finish_reason = candidate.get('finishReason', 'stop').lower()
         if finish_reason == 'max_tokens':
             finish_reason = 'length'
+        elif finish_reason == 'malformed_function_call' and not tool_calls:
+            finish_reason = 'stop'
 
         # Combine text and image parts into content
         content = '\n'.join(text_parts + image_parts) or None
