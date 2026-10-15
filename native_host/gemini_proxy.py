@@ -231,6 +231,8 @@ def openai_to_gemini(body):
                             if tc.get('id') == tool_call_id:
                                 func_name = tc.get('function', {}).get('name', '')
                                 break
+            if not func_name:
+                func_name = "bash"
             result_text = str(content)
             if len(result_text) > 8000:
                 result_text = result_text[:8000] + "\n... (truncated)"
@@ -456,14 +458,20 @@ def gemini_to_openai(gemini_response, model):
                     }
                 })
 
-        finish_reason = candidate.get('finishReason', 'stop').lower()
-        if finish_reason == 'max_tokens':
+        raw_finish = str(candidate.get('finishReason', 'STOP')).upper()
+        if raw_finish == 'MAX_TOKENS':
             finish_reason = 'length'
-        elif finish_reason == 'malformed_function_call' and not tool_calls:
+        elif raw_finish in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION'):
+            finish_reason = 'content_filter'
+        elif tool_calls:
+            finish_reason = 'tool_calls'
+        else:
             finish_reason = 'stop'
 
         # Combine text and image parts into content
         content = '\n'.join(text_parts + image_parts) or None
+        if not tool_calls and not content:
+            content = "..."
 
         if tool_calls:
             return {
@@ -482,7 +490,7 @@ def gemini_to_openai(gemini_response, model):
                 "usage": _extract_usage(gemini_response)
             }
 
-    content = '\n'.join(text_parts + image_parts) or ""
+    content = '\n'.join(text_parts + image_parts) or "..."
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
@@ -651,73 +659,92 @@ class APIHandler(BaseHTTPRequestHandler):
         gemini_body = openai_to_gemini(body)
         stream = body.get('stream', False)
 
-        # Create a tracked request
-        req_id = str(uuid.uuid4())
-        response_queue = Queue()
-        pending_requests[req_id] = response_queue
+        # Retry loop for transient Gemini malformed response glitches
+        max_attempts = 2
+        resp = None
+        for attempt in range(max_attempts):
+            req_id = str(uuid.uuid4())
+            response_queue = Queue()
+            pending_requests[req_id] = response_queue
 
-        # Check if the payload exceeds the 1MB native messaging limit.
-        # Chrome's kMaximumNativeMessageSize = 1024*1024 bytes for host→extension.
-        # If it does, store the payload and tell the extension to fetch it via HTTP
-        # (extension service workers can fetch localhost without LNA restrictions).
-        message_payload = {
-            "type": "api_request",
-            "id": req_id,
-            "method": "POST",
-            "path": f"/v1beta/models/{model}:generateContent",
-            "body": gemini_body,
-            "headers": {}
-        }
-        serialized = json.dumps(message_payload, separators=(',', ':')).encode('utf-8')
+            # Check if the payload exceeds the 1MB native messaging limit.
+            # Chrome's kMaximumNativeMessageSize = 1024*1024 bytes for host→extension.
+            # If it does, store the payload and tell the extension to fetch it via HTTP
+            # (extension service workers can fetch localhost without LNA restrictions).
+            message_payload = {
+                "type": "api_request",
+                "id": req_id,
+                "method": "POST",
+                "path": f"/v1beta/models/{model}:generateContent",
+                "body": gemini_body,
+                "headers": {}
+            }
+            serialized = json.dumps(message_payload, separators=(',', ':')).encode('utf-8')
 
-        global last_request_time
-        with request_lock:
-            try:
-                if len(serialized) > 900_000:
-                    chunk_size = 800_000
-                    payload_str = serialized.decode('utf-8')
-                    total_chunks = (len(payload_str) + chunk_size - 1) // chunk_size
-                    sys.stderr.write(f"[Proxy] Large payload ({len(serialized)}B), sending in {total_chunks} chunks\n")
-                    sys.stderr.flush()
+            global last_request_time
+            with request_lock:
+                try:
+                    if len(serialized) > 900_000:
+                        chunk_size = 800_000
+                        payload_str = serialized.decode('utf-8')
+                        total_chunks = (len(payload_str) + chunk_size - 1) // chunk_size
+                        sys.stderr.write(f"[Proxy] Large payload ({len(serialized)}B), sending in {total_chunks} chunks\n")
+                        sys.stderr.flush()
 
-                    for i in range(total_chunks):
-                        chunk = payload_str[i * chunk_size : (i + 1) * chunk_size]
-                        send_message({
-                            "type": "api_request_chunk",
-                            "id": req_id,
-                            "chunk_index": i,
-                            "total_chunks": total_chunks,
-                            "chunk_data": chunk
-                        })
-                else:
-                    send_message(message_payload)
-            except NativeMessagingDisconnectedError as e:
-                pending_requests.pop(req_id, None)
-                self._json_error(502, "Chrome Extension channel disconnected. Please reload the extension and Gemini page in Chrome.")
+                        for i in range(total_chunks):
+                            chunk = payload_str[i * chunk_size : (i + 1) * chunk_size]
+                            send_message({
+                                "type": "api_request_chunk",
+                                "id": req_id,
+                                "chunk_index": i,
+                                "total_chunks": total_chunks,
+                                "chunk_data": chunk
+                            })
+                    else:
+                        send_message(message_payload)
+                except NativeMessagingDisconnectedError as e:
+                    pending_requests.pop(req_id, None)
+                    self._json_error(502, "Chrome Extension channel disconnected. Please reload the extension and Gemini page in Chrome.")
+                    return
+
+                # Wait for the response (up to 60s)
+                try:
+                    resp = response_queue.get(timeout=60)
+                except Empty:
+                    pending_requests.pop(req_id, None)
+                    write_request_log(req_id, model, body, gemini_body, 504, None, "Gateway Timeout")
+                    self._json_error(504, "Gateway Timeout — Canvas tab may be closed or unresponsive")
+                    return
+                finally:
+                    last_request_time = time.time()
+
+            pending_requests.pop(req_id, None)
+
+            if resp.get('error'):
+                error_detail = resp.get('data')
+                write_request_log(req_id, model, body, gemini_body, resp.get('status', 502), error_detail, resp.get('error'))
+                err_msg = f"{resp.get('error')}: {error_detail}" if error_detail else resp.get('error')
+                self._json_error(resp.get('status', 502), err_msg)
                 return
 
-            # Wait for the response (up to 60s)
-            try:
-                resp = response_queue.get(timeout=60)
-            except Empty:
-                pending_requests.pop(req_id, None)
-                write_request_log(req_id, model, body, gemini_body, 504, None, "Gateway Timeout")
-                self._json_error(504, "Gateway Timeout — Canvas tab may be closed or unresponsive")
-                return
-            finally:
-                last_request_time = time.time()
+            resp_data = resp.get('data', {})
+            candidates = resp_data.get('candidates', [])
+            first_cand = candidates[0] if candidates else {}
+            cand_finish = str(first_cand.get('finishReason', '')).upper()
+            cand_parts = first_cand.get('content', {}).get('parts', [])
+            has_tool_call = any('functionCall' in p for p in cand_parts)
 
-        pending_requests.pop(req_id, None)
+            # Auto-retry transient MALFORMED_RESPONSE / MALFORMED_FUNCTION_CALL with no tool calls
+            if cand_finish in ('MALFORMED_RESPONSE', 'MALFORMED_FUNCTION_CALL') and not has_tool_call and attempt < max_attempts - 1:
+                sys.stderr.write(f"[Proxy] Gemini returned transient {cand_finish}, retrying (attempt {attempt + 1}/{max_attempts})...\n")
+                sys.stderr.flush()
+                time.sleep(0.5)
+                continue
 
-        if resp.get('error'):
-            error_detail = resp.get('data')
-            write_request_log(req_id, model, body, gemini_body, resp.get('status', 502), error_detail, resp.get('error'))
-            err_msg = f"{resp.get('error')}: {error_detail}" if error_detail else resp.get('error')
-            self._json_error(resp.get('status', 502), err_msg)
-            return
+            break
 
         openai_response = gemini_to_openai(resp.get('data', {}), raw_model)
-        write_request_log(req_id, raw_model, body, gemini_body, 200, "OK", None)
+        write_request_log(req_id, raw_model, body, gemini_body, 200, resp.get('data'), None)
 
         if stream:
             self._send_streaming(openai_response, raw_model)
